@@ -1,0 +1,8 @@
+#!name=Surge解锁
+#!desc=用于解锁surge订阅的模块
+#!author=Apple支持
+
+[Script]
+
+[MITM]
+hostname = %APPEND% 
