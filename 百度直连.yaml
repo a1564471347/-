@@ -1,0 +1,726 @@
+# 本配置中自建节点里的混淆
+host: &host f.video.weibocdn.com
+# baidu
+baidu: &baidu
+  type: http
+  port: 443
+  headers:
+    Host: "153.3.236.22:443"
+    X-T5-Auth: 683556433
+    User-Agent: "okhttp/3.11.0 Dalvik/2.1.0 (Linux; U; Android 11; Redmi K30 5G Build/RKQ1.200826.002) baiduboxapp/11.0.5.12 (Baidu; P1 11)"
+# baiduProxies
+baiduProxies: &baiduProxies
+  proxies:
+    - "🆓 百度 南京联通"
+    - "🆓 百度 苏州联通"
+    - "🆓 百度 广州联通"
+    - "🆓 百度 保定联通"
+    - "🆓 百度 保定联通2"
+# subscribe-url:
+mode: rule
+log-level: info
+external-controller: 127.0.0.1:9090
+http:
+  ca: "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"
+  ca-passphrase: "C4326F69"
+  # 强制使用 HTTP 引擎处理 TCP 连接
+  # 捕获后的连接可以使用高级功能，例如重写和脚本
+  # force-http-engine:
+  #   - '*:80'
+  #   - '*:4480' # BiliBili CDN
+  #   - '*:9102' # BiliBili CDN
+dns:
+  default-nameserver:
+    - 223.6.6.6
+  nameserver:
+    - 223.6.6.6
+  skip-cert-verify: true
+  fake-ip-filter: [+.apple.com, localhost, passenger.t3go.cn, e.crashlytics.com, captive.apple.com, +.siri.apple.com, app.yinxiang.com, injections.adguard.org, local.adguard.org, cable.auth.com, www.baidu.com, yunbusiness.ccb.com, wxh.wo.cn, gate.lagou.com, www.abchina.com.cn, network-test.debian.org, detectportal.firefox.com, resolver1.opendns.com, stun.*, global.turn.twilio.com, global.stun.twilio.com, music.163.com, musicapi.taihe.com, music.taihe.com, songsearch.kugou.com, trackercdn.kugou.com, api-jooxtt.sanook.com, api.joox.com, joox.com, y.qq.com, streamoc.music.tc.qq.com, mobileoc.music.tc.qq.com, isure.stream.qqmusic.qq.com, dl.stream.qqmusic.qq.com, aqqmusic.tc.qq.com, amobile.music.tc.qq.com, music.migu.cn, proxy.golang.org, id6.me, open.e.189.cn, mdn.open.wo.cn, opencloud.wostore.cn, auth.wosms.cn, pool.ntp.org, PDC._msDCS.*.*, DC._msDCS.*.*, GC._msDCS.*.*, ntp.*.com, time.*.com, 'ntp?.*.com', 'time?.*.com', time.*.gov, time.*.edu.cn, xbox.*.microsoft.com, localhost.*.qq.com, +.local, +.id.ui.direct, +.lan, +.msftconnecttest.com, +.msftncsi.com, +.srv.nintendo.net, +.stun.playstation.net, +.xboxlive.com, +.logon.battlenet.com.cn, +.logon.battle.net, +.blzstatic.cn, +.music.163.com, +.126.net, +.kuwo.cn, +.y.qq.com, +.xiami.com, +.music.migu.cn, +.mcdn.bilivideo.cn, +.cmpassport.com, +.jegotrip.com.cn, +.icitymobile.mobi, +.pingan.com.cn, +.cmbchina.com, +.pool.ntp.org, +.ntp.org.cn, +.10010.com, +.chinaunicom.com, +.baidu.com, +.alipay.com, +.alipayobjects.com, +.dl.google.com, +.jijifun.com, connect.rom.miui.com, wifi.vivo.com.cn, localhost.ptlogin2.qq.com, +.msftnsci.com, +.gstatic.com, +.stun.*.*, +.stun.*.*.*, +.stun.*.*.*.*, +.time.*, +.time.*.*, +.time.*.*.*, time1.*.com, time2.*.com, time3.*.com, time4.*.com, time5.*.com, time6.*.com, time7.*.com, ntp1.*.com, ntp2.*.com, ntp3.*.com, ntp4.*.com, ntp5.*.com, ntp6.*.com, ntp7.*.com, +.ntp.*, +.ntp.*.*, +.ntp.*.*.*, +.localdomain, +.example, +.invalid, +.localhost, +.test, +.home.arpa, time1.cloud.tencent.com, localhost.sec.qq.com, +.battlenet.com.cn, +.wotgame.cn, +.wggames.cn, +.wowsgame.cn, +.wargaming.net, heartbeat.belkin.com, +.linksys.com, +.linksyssmartwifi.com, +.router.asus.com, mesu.apple.com, swscan.apple.com, swquery.apple.com, swdownload.apple.com, swcdn.apple.com, swdist.apple.com, lens.l.google.com, stun.l.google.com, +.nflxvideo.net, +.square-enix.com, +.finalfantasyxiv.com, +.ffxiv.com, WORKGROUP]
+  nameserver-policy: {}
+script:
+  shortcuts:
+    quic: network == 'udp' and (dst_port == 443 or dst_port == 4483 or dst_port == 9305)
+    udpGhproxy: network == 'udp' and ('ghproxy.com' in host)
+    udpUnbreak: network == 'udp' and match_provider('Unbreak')
+    udpAppleProxy: network == 'udp' and match_provider('AppleProxy')
+    udpTestFlight: network == 'udp' and match_provider('TestFlight')
+    udpiCloud: network == 'udp' and match_provider('iCloud')
+    udpApple: network == 'udp' and match_provider('Apple')
+    udpGoogle: network == 'udp' and match_provider('Google')
+    udpMicrosoft: network == 'udp' and match_provider('Microsoft')
+    udpGlobal: network == 'udp' and match_provider('Global')
+    udpGlobalDomain: network == 'udp' and match_provider('GlobalDomain')
+    udpForeignDomain: network == 'udp' and match_provider('ForeignDomain')
+    udpChina: network == 'udp' and match_provider('China')
+    udpChinaDomain: network == 'udp' and match_provider('ChinaDomain')
+    udpTencent: network == 'udp' and match_provider('Tencent')
+    udpCN: network == 'udp' and geoip(dst_ip if dst_ip != '' else resolve_ip(host)) == 'CN'
+    udpMatch: network == 'udp'
+    limitedGhproxy: network == 'tcp' and (dst_port == 443 or dst_port == 80) and ('ghproxy.com' in host)
+    limitedUnbreak: network == 'tcp' and (dst_port == 443 or dst_port == 80) and match_provider('Unbreak')
+    limitedApple: network == 'tcp' and (dst_port == 443 or dst_port == 80) and match_provider('Apple')
+    limitediCloud: network == 'tcp' and (dst_port == 443 or dst_port == 80) and match_provider('iCloud')
+    limitedChina: network == 'tcp' and (dst_port == 443 or dst_port == 80) and match_provider('China')
+    limitedChinaDomain: network == 'tcp' and (dst_port == 443 or dst_port == 80) and match_provider('ChinaDomain')
+    limitedTencent: network == 'tcp' and (dst_port == 443 or dst_port == 80) and match_provider('Tencent')
+    limitedCN: network == 'tcp' and (dst_port == 443 or dst_port == 80) and geoip(dst_ip if dst_ip != '' else resolve_ip(host)) == 'CN'
+proxies:
+  - name: "🆓🌑 国外自建"
+    type: vmess
+    server: 1.1.1.1
+    port: 80
+    uuid: 11111111-1111-1111-1111-111111111111
+    alterId: "0"
+    cipher: auto
+    tls: false
+    udp: true
+    servername: *host
+    tls-hostname: *host
+    sni: *host
+    skip-cert-verify: true
+    network: ws
+    ws-opts:
+      path: /
+      headers:
+        Host: *host
+  - name: "🆓🇨🇳 国内自建"
+    type: trojan
+    tls-fingerprint: 360
+    server: 1.1.1.1
+    port: 443
+    password: 11111111
+    udp: true
+    sni: *host
+    # alpn:
+    #   - h2
+    #   - http/1.1
+    skip-cert-verify: true
+    network: ws
+    ws-opts:
+      path: /11111111111
+      headers:
+        Host: *host
+  # > WARP 的一个例子
+  # > Zero Trust 从入门到放弃 https://www.craft.do/s/avqa8GJuLbLsFv
+  # > 模块 https://t.me/GetSomeFriesChannel/153
+
+  # - name: "🆓☁️ WARP"
+  #   server: 162.159.195.8
+  #   dns: [1.0.0.1, 223.6.6.6]
+  #   ip: 172.16.0.2
+  #   keepalive: 45
+  #   mtu: 1280
+  #   reserved: [51, 119, 13]
+  #   port: 2408
+  #   private-key: "1111111111111111111"
+  #   public-key: bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo=
+  #   type: wireguard
+  #   # 代理链: 此处例子是 trojan. 之前试了 vmess 即使有 udp 也不行.
+  #   # 前置代理免流就能免
+  #   underlying-proxy:
+  #     type: trojan
+  #     tls-fingerprint: 360
+  #     server: 1.1.1.1
+  #     port: 443
+  #     password: 111111111111111
+  #     udp: true
+  #     sni: *host
+  #     # alpn:
+  #     #   - h2
+  #     #   - http/1.1
+  #     skip-cert-verify: true
+  #     network: ws
+  #     ws-opts:
+  #       path: /111111111
+  #       headers:
+  #         Host: *host
+  - name: "🆓 百度 苏州联通"
+    server: 157.0.148.53
+    !!merge <<: *baidu
+  - name: "🆓 百度 保定联通"
+    server: 110.242.70.68
+    !!merge <<: *baidu
+  - name: "🆓 百度 保定联通2"
+    server: 110.242.70.69
+    !!merge <<: *baidu
+  - name: "🆓 百度 广州联通"
+    server: 157.255.78.51
+    !!merge <<: *baidu
+  - name: "🆓 百度 南京联通"
+    server: 153.3.236.22
+    !!merge <<: *baidu
+  # > 支持 443 端口, TCP
+  - name: "🆓 UC 免流"
+    type: http
+    server: 101.71.140.5
+    port: 8128
+    username: uc10.7.163.144
+    password: 1f47d3ef53b035443451c7ee7873ff38
+proxy-groups:
+  - name: "🇨🇳 墙内"
+    icon: https://ghproxy.com/https://raw.githubusercontent.com/Koolson/Qure/master/IconSet/Color/Domestic.png
+    type: select
+    proxies:
+      - "DIRECT"
+      - "🆓🇨🇳 墙内免流"
+    ssid-policy:
+      cellular: "🆓🇨🇳 墙内免流"
+      default: "DIRECT"
+  - name: "🆓🇨🇳 墙内免流"
+    type: select
+    proxies:
+      - "🆓🇨🇳✈️ 免流墙内机场"
+      - "🆓🌑✈️ 免流墙外机场"
+      - "🆓🇨🇳 免流墙内自建"
+      - "🆓🌑 免流墙外自建"
+      - DIRECT
+  - name: "🇨🇳 墙内受限"
+    type: select
+    proxies:
+      - "🇨🇳 墙内"
+      - "🆓🇨🇳 墙内受限免流"
+    ssid-policy:
+      cellular: "🆓🇨🇳 墙内受限免流"
+      default: "🇨🇳 墙内"
+  - name: "🆓🇨🇳 墙内受限免流"
+    type: select
+    proxies:
+      # > 支持 80/443 端口, TCP
+      - "🆓 百度免流"
+      # > 支持 443 端口, TCP
+      # - "🆓 UC 免流"
+      - "🆓🇨🇳 墙内免流"
+  - name: "🇨🇳 墙内 UDP"
+    type: select
+    proxies:
+      - "🇨🇳 墙内"
+      - "🆓🇨🇳 墙内免流 UDP"
+    ssid-policy:
+      cellular: "🆓🇨🇳 墙内免流 UDP"
+      default: "🇨🇳 墙内"
+  - name: "🆓🇨🇳 墙内免流 UDP"
+    type: select
+    proxies:
+      - "🆓🇨🇳 免流墙内自建"
+      - "🆓🌑 免流墙外自建"
+      - "🆓🇨🇳✈️ 免流墙内机场"
+      - "🆓🌑✈️ 免流墙外机场"
+      - "🆓🇨🇳 墙内免流"
+  - name: "网易云音乐"
+    icon: https://ghproxy.com/https://raw.githubusercontent.com/Koolson/Qure/master/IconSet/Color/Netease_Music.png
+    type: select
+    proxies:
+      - "网易云音乐解锁"
+      - "🆓 网易云音乐免流解锁"
+    ssid-policy:
+      cellular: "🆓 网易云音乐免流解锁"
+      default: "网易云音乐解锁"
+  - name: "🆓 网易云音乐免流解锁"
+    icon: https://ghproxy.com/https://raw.githubusercontent.com/Koolson/Qure/master/IconSet/Color/Netease_Music_Unlock.png
+    type: select
+    proxies:
+      - "🇨🇳 墙内"
+      # > 自建免流+解锁的节点 或者 自己用免流代理做代理链
+      # - "🆓🇨🇳🎵🔓 自建解锁免流"
+  - name: "网易云音乐解锁"
+    icon: https://ghproxy.com/https://raw.githubusercontent.com/Koolson/Qure/master/IconSet/Color/Netease_Music_Unlock.png
+    type: select
+    proxies:
+      - "🇨🇳 墙内"
+      # - "🇨🇳🎵🔓 自建解锁"
+  - name: "中国联通"
+    icon: https://ghproxy.com/https://raw.githubusercontent.com/Koolson/Qure/master/IconSet/China_Unicom.png
+    type: select
+    proxies:
+      - DIRECT
+      - "🆓🇨🇳 中国联通免流"
+    ssid-policy:
+      cellular: "🆓🇨🇳 中国联通免流"
+      default: "DIRECT"
+  - name: "🆓🇨🇳 中国联通免流"
+    icon: https://ghproxy.com/https://raw.githubusercontent.com/Koolson/Qure/master/IconSet/China_Unicom.png
+    type: select
+    proxies:
+      - "🇨🇳 墙内"
+      - "🆓🇨🇳 免流墙内自建"
+      - "🆓🇨🇳 墙内免流 UDP"
+      - "🆓🌑 墙外 UDP"
+      - "🆓🌑 免流墙外自建"
+      - "🌑 墙外"
+      - DIRECT
+  - name: "🆓 百度免流"
+    icon: https://ghproxy.com/https://raw.githubusercontent.com/Koolson/Qure/master/IconSet/Baidu_Cloud.png
+    type: select
+    proxies:
+      - "🆓 百度免流-故障转移"
+      - "🆓 百度免流-自动测速"
+      - "🆓 百度免流-手动选择"
+  - name: "🆓 百度免流-故障转移"
+    icon: https://ghproxy.com/https://raw.githubusercontent.com/Koolson/Qure/master/IconSet/Color/Available_1.png
+    type: fallback
+    url: "http://223.6.6.6"
+    tolerance: 50
+    lazy: true
+    interval: 60
+    !!merge <<: *baiduProxies
+  - name: "🆓 百度免流-自动测速"
+    icon: https://ghproxy.com/https://raw.githubusercontent.com/Koolson/Qure/master/IconSet/Color/Auto.png
+    type: url-test
+    url: "http://223.6.6.6"
+    tolerance: 50
+    lazy: true
+    interval: 60
+    !!merge <<: *baiduProxies
+  - name: "🆓 百度免流-手动选择"
+    icon: https://ghproxy.com/https://raw.githubusercontent.com/Koolson/Qure/master/IconSet/Color/Static.png
+    type: select
+    url: "http://223.6.6.6"
+    lazy: true
+    interval: 60
+    !!merge <<: *baiduProxies
+  - name: Proxy
+    icon: https://ghproxy.com/https://raw.githubusercontent.com/Koolson/Qure/master/IconSet/Color/Proxy.png
+    type: select
+    proxies:
+      - "🌑 墙外"
+  - name: "🌑 墙外"
+    icon: https://ghproxy.com/https://raw.githubusercontent.com/Koolson/Qure/master/IconSet/Color/Global.png
+    type: select
+    proxies:
+      - "🚀🌑 墙外非免流"
+      - "🆓🌑 墙外免流"
+    ssid-policy:
+      cellular: "🆓🌑 墙外免流"
+      default: "🚀🌑 墙外非免流"
+  - name: "🚀🌑 墙外非免流"
+    type: select
+    proxies:
+      - "🆓🌑✈️ 免流墙外机场"
+      - "🆓🇨🇳✈️ 免流墙内机场"
+      - "🆓🌑 免流墙外自建"
+      - "🆓🇨🇳 免流墙内自建"
+  - name: "🆓🌑 墙外免流"
+    type: select
+    proxies:
+      - "🆓🌑✈️ 免流墙外机场"
+      - "🆓🇨🇳✈️ 免流墙内机场"
+      - "🆓🌑 免流墙外自建"
+      - "🆓🇨🇳 免流墙内自建"
+  - name: "🛑 拦截"
+    icon: https://ghproxy.com/https://raw.githubusercontent.com/Koolson/Qure/master/IconSet/Color/Reject.png
+    type: select
+    proxies:
+      - "REJECT"
+      - "🌑 墙外"
+      - "🇨🇳 墙内"
+  - name: "🌑 墙外 UDP"
+    type: select
+    proxies:
+      - "🌑 墙外"
+      - "🆓🌑 墙外 UDP"
+    ssid-policy:
+      cellular: "🆓🌑 墙外 UDP"
+      default: "🌑 墙外"
+  - name: "🆓🌑 墙外 UDP"
+    type: select
+    proxies:
+      - "🆓🌑 免流墙外自建"
+      - "🆓🇨🇳 免流墙内自建"
+      - "🆓🌑✈️ 免流墙外机场"
+      - "🆓🇨🇳✈️ 免流墙内机场"
+      - "🆓🌑 墙外免流"
+  - name: "🆓🇨🇳 免流墙内自建"
+    icon: https://ghproxy.com/https://raw.githubusercontent.com/Koolson/Qure/master/IconSet/Color/Server.png
+    type: select
+    proxies:
+      - "🆓🇨🇳 免流墙内自建-自动测速"
+      - "🆓🇨🇳 免流墙内自建-故障转移"
+      - "🆓🇨🇳 免流墙内自建-负载均衡"
+      - "🆓🇨🇳 免流墙内自建-手动选择"
+  - name: "🆓🇨🇳 免流墙内自建-手动选择"
+    icon: https://ghproxy.com/https://raw.githubusercontent.com/Koolson/Qure/master/IconSet/Color/Static.png
+    type: select
+    url: "http://223.6.6.6"
+    lazy: true
+    interval: 60
+    proxies:
+      - "🆓🇨🇳 国内自建"
+  - name: "🆓🇨🇳 免流墙内自建-负载均衡"
+    icon: https://ghproxy.com/https://raw.githubusercontent.com/Koolson/Qure/master/IconSet/Color/Round_Robin_1.png
+    type: load-balance
+    strategy: consistent-hashing
+    url: "http://223.6.6.6"
+    tolerance: 50
+    lazy: true
+    interval: 60
+    proxies:
+      - "🆓🇨🇳 国内自建"
+  - name: "🆓🇨🇳 免流墙内自建-故障转移"
+    icon: https://ghproxy.com/https://raw.githubusercontent.com/Koolson/Qure/master/IconSet/Color/Available_1.png
+    type: fallback
+    tolerance: 50
+    url: "http://223.6.6.6"
+    lazy: true
+    interval: 60
+    proxies:
+      - "🆓🇨🇳 国内自建"
+  - name: "🆓🇨🇳 免流墙内自建-自动测速"
+    icon: https://ghproxy.com/https://raw.githubusercontent.com/Koolson/Qure/master/IconSet/Color/Auto.png
+    type: url-test
+    url: "http://223.6.6.6"
+    tolerance: 50
+    lazy: true
+    interval: 60
+    proxies:
+      - "🆓🇨🇳 国内自建"
+  - name: "🆓🇨🇳✈️ 免流墙内机场"
+    icon: https://ghproxy.com/https://raw.githubusercontent.com/Koolson/Qure/master/IconSet/Color/Airport.png
+    type: select
+    proxies:
+      - "🆓🇨🇳✈️ 免流墙内机场-自动测速"
+      - "🆓🇨🇳✈️ 免流墙内机场-故障转移"
+      - "🆓🇨🇳✈️ 免流墙内机场-负载均衡"
+      - "🆓🇨🇳✈️ 免流墙内机场-手动选择"
+  - name: "🆓🇨🇳✈️ 免流墙内机场-手动选择"
+    icon: https://ghproxy.com/https://raw.githubusercontent.com/Koolson/Qure/master/IconSet/Color/Static.png
+    type: select
+    url: "http://223.6.6.6"
+    lazy: true
+    interval: 60
+    use:
+      - domesticAirport
+  - name: "🆓🇨🇳✈️ 免流墙内机场-负载均衡"
+    icon: https://ghproxy.com/https://raw.githubusercontent.com/Koolson/Qure/master/IconSet/Color/Round_Robin_1.png
+    type: load-balance
+    strategy: consistent-hashing
+    url: "http://223.6.6.6"
+    tolerance: 50
+    lazy: true
+    interval: 60
+    use:
+      - domesticAirport
+  - name: "🆓🇨🇳✈️ 免流墙内机场-故障转移"
+    icon: https://ghproxy.com/https://raw.githubusercontent.com/Koolson/Qure/master/IconSet/Color/Available_1.png
+    type: fallback
+    url: "http://223.6.6.6"
+    tolerance: 50
+    lazy: true
+    interval: 60
+    use:
+      - domesticAirport
+  - name: "🆓🇨🇳✈️ 免流墙内机场-自动测速"
+    icon: https://ghproxy.com/https://raw.githubusercontent.com/Koolson/Qure/master/IconSet/Color/Auto.png
+    type: url-test
+    url: "http://223.6.6.6"
+    tolerance: 50
+    lazy: true
+    interval: 60
+    use:
+      - domesticAirport
+  - name: "🆓🌑 免流墙外自建"
+    icon: https://ghproxy.com/https://raw.githubusercontent.com/Koolson/Qure/master/IconSet/Color/Server.png
+    type: select
+    proxies:
+      - "🆓🌑 免流墙外自建-自动测速"
+      - "🆓🌑 免流墙外自建-故障转移"
+      - "🆓🌑 免流墙外自建-负载均衡"
+      - "🆓🌑 免流墙外自建-手动选择"
+  - name: "🆓🌑 免流墙外自建-手动选择"
+    icon: https://ghproxy.com/https://raw.githubusercontent.com/Koolson/Qure/master/IconSet/Color/Static.png
+    type: select
+    url: "https://8.8.4.4"
+    lazy: true
+    interval: 60
+    proxies:
+      - "🆓🌑 国外自建"
+  - name: "🆓🌑 免流墙外自建-故障转移"
+    icon: https://ghproxy.com/https://raw.githubusercontent.com/Koolson/Qure/master/IconSet/Color/Available_1.png
+    type: fallback
+    tolerance: 50
+    url: "https://8.8.4.4"
+    lazy: true
+    interval: 60
+    proxies:
+      - "🆓🌑 国外自建"
+  - name: "🆓🌑 免流墙外自建-负载均衡"
+    icon: https://ghproxy.com/https://raw.githubusercontent.com/Koolson/Qure/master/IconSet/Color/Round_Robin_1.png
+    type: load-balance
+    strategy: consistent-hashing
+    url: "https://8.8.4.4"
+    tolerance: 50
+    lazy: true
+    interval: 60
+    proxies:
+      - "🆓🌑 国外自建"
+  - name: "🆓🌑 免流墙外自建-自动测速"
+    icon: https://ghproxy.com/https://raw.githubusercontent.com/Koolson/Qure/master/IconSet/Color/Auto.png
+    type: url-test
+    url: "https://8.8.4.4"
+    tolerance: 50
+    lazy: true
+    interval: 60
+    proxies:
+      - "🆓🌑 国外自建"
+  - name: "🆓🌑✈️ 免流墙外机场"
+    icon: https://ghproxy.com/https://raw.githubusercontent.com/Koolson/Qure/master/IconSet/Color/Airport.png
+    type: select
+    proxies:
+      - "🆓🌑✈️ 免流墙外机场-自动测速"
+      - "🆓🌑✈️ 免流墙外机场-故障转移"
+      - "🆓🌑✈️ 免流墙外机场-负载均衡"
+      - "🆓🌑✈️ 免流墙外机场-手动选择"
+  - name: "🆓🌑✈️ 免流墙外机场-手动选择"
+    icon: https://ghproxy.com/https://raw.githubusercontent.com/Koolson/Qure/master/IconSet/Color/Static.png
+    type: select
+    url: "https://8.8.4.4"
+    lazy: true
+    interval: 60
+    use:
+      - airport
+  - name: "🆓🌑✈️ 免流墙外机场-故障转移"
+    icon: https://ghproxy.com/https://raw.githubusercontent.com/Koolson/Qure/master/IconSet/Color/Available_1.png
+    type: fallback
+    url: "https://8.8.4.4"
+    tolerance: 50
+    lazy: true
+    interval: 60
+    use:
+      - airport
+  - name: "🆓🌑✈️ 免流墙外机场-负载均衡"
+    icon: https://ghproxy.com/https://raw.githubusercontent.com/Koolson/Qure/master/IconSet/Color/Round_Robin_1.png
+    type: load-balance
+    strategy: consistent-hashing
+    url: "https://8.8.4.4"
+    tolerance: 50
+    lazy: true
+    interval: 60
+    use:
+      - airport
+  - name: "🆓🌑✈️ 免流墙外机场-自动测速"
+    icon: https://ghproxy.com/https://raw.githubusercontent.com/Koolson/Qure/master/IconSet/Color/Auto.png
+    type: url-test
+    url: "https://8.8.4.4"
+    tolerance: 50
+    lazy: true
+    interval: 60
+    use:
+      - airport
+proxy-providers:
+  airport:
+    url: "https://your-sub-store-api.com/download/collection/proxy?target=Clash"
+    interval: 3600
+    health-check:
+      enable: true
+      interval: 60
+      url: "https://8.8.4.4"
+  domesticAirport:
+    url: "https://your-sub-store-api.com/download/collection/domestic?target=Clash"
+    interval: 3600
+    health-check:
+      enable: true
+      interval: 60
+      url: http://223.6.6.6
+      # > 白嫖网易云音乐解锁代理
+      # > 如果要免流使用, 自己在 "🆓 网易云音乐免流解锁" 组里用免流代理做代理链
+      # unblockNetEaseMusic:
+      #   url: "https://api.v1.mk/sub?target=clash&url=https%3A%2F%2Fraw.githubusercontent.com%2FDesperadoJ%2FRules-for-UnblockNeteaseMusic%2Fmaster%2FShadowrocket%2Fshadowrocket-server.txt%7Chttps%3A%2F%2Fraw.githubusercontent.com%2Fnameking77%2FQx%2Fmain%2Fmusic%2Fwyy.txt%7Chttps%3A%2F%2Fgitlab.com%2Fioshkj%2Fquantumultx%2F-%2Fraw%2Fmain%2Fwyy.list%7Chttps%3A%2F%2Fraw.githubusercontent.com%2F89996462%2FQuantumult-X%2Fmain%2Fycdz%2Fwyy.list%7Chttps%3A%2F%2Fraw.githubusercontent.com%2FI-am-R-E%2FFunctional-Store-Hub%2FMaster%2FNeteaseMusic%2FAgentNode%2FSurge.list&insert=false&config=https%3A%2F%2Fraw.githubusercontent.com%2FMeilieage%2Fwebcdn%2Fmain%2Frule%2FArea_Media_NoAuto.ini&append_type=true&emoji=false&list=true&udp=true&tfo=true&expand=false&scv=true&fdn=true&new_name=true"
+      #   interval: 3600
+      #   health-check:
+      #     enable: true
+      #     interval: 60
+      #     url: http://223.6.6.6
+rule-providers:
+  Unbreak:
+    type: http
+    behavior: classical
+    url: "https://ghproxy.com/https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/Direct/Direct.yaml"
+    path: ./ruleset/Unbreak.yaml
+    interval: 3600
+  # > 电脑端开直连
+  # Download:
+  #   type: http
+  #   behavior: classical
+  #   url: "https://ghproxy.com/https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/Download/Download.yaml"
+  #   path: ./ruleset/Download.yaml
+  #   interval: 3600
+  # > AdvertisingLite 误杀可能会少一点
+  Advertising:
+    type: http
+    behavior: classical
+    # url: "https://ghproxy.com/https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/Advertising/Advertising.yaml"
+    url: "https://ghproxy.com/https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/AdvertisingLite/AdvertisingLite.yaml"
+    path: ./ruleset/Advertising.yaml
+    interval: 3600
+  # > 域名感觉误杀比较多 我不开
+  # AdvertisingDomain:
+  #   type: http
+  #   behavior: domain-text
+  #   # url: "https://ghproxy.com/https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/Advertising/Advertising_Domain.txt"
+  #   url: "https://ghproxy.com/https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/AdvertisingLite/AdvertisingLite_Domain.txt"
+  #   path: ./ruleset/AdvertisingDomain.txt
+  #   interval: 3600
+  TestFlight:
+    type: http
+    behavior: classical
+    url: "https://ghproxy.com/https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/TestFlight/TestFlight.yaml"
+    path: ./ruleset/TestFlight.yaml
+    interval: 3600
+  AppleProxy:
+    type: http
+    behavior: classical
+    url: "https://ghproxy.com/https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/AppleProxy/AppleProxy.yaml"
+    path: ./ruleset/AppleProxy.yaml
+    interval: 3600
+  Apple:
+    type: http
+    behavior: classical
+    url: "https://ghproxy.com/https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/Apple/Apple.yaml"
+    path: ./ruleset/Apple.yaml
+    interval: 3600
+  iCloud:
+    type: http
+    behavior: classical
+    url: "https://ghproxy.com/https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/iCloud/iCloud.yaml"
+    path: ./ruleset/iCloud.yaml
+    interval: 3600
+  Tencent:
+    type: http
+    behavior: classical
+    url: "https://ghproxy.com/https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/Tencent/Tencent.yaml"
+    path: ./ruleset/Tencent.yaml
+    interval: 3600
+  ChinaUnicom:
+    type: http
+    behavior: classical
+    url: "https://ghproxy.com/https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/ChinaUnicom/ChinaUnicom.yaml"
+    path: ./ruleset/ChinaUnicom.yaml
+    interval: 3600
+  NetEaseMusic:
+    type: http
+    behavior: classical
+    url: "https://ghproxy.com/https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/NetEaseMusic/NetEaseMusic.yaml"
+    path: ./ruleset/NetEaseMusic.yaml
+    interval: 3600
+  China:
+    type: http
+    behavior: classical
+    url: "https://ghproxy.com/https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/ChinaMax/ChinaMax.yaml"
+    # url: "https://ghproxy.com/https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/China/China.yaml"
+    path: ./ruleset/China.yaml
+    interval: 3600
+  # > 内存够的可以用 ChinaMax_Domain
+  ChinaDomain:
+    type: http
+    behavior: domain-text
+    # url: "https://ghproxy.com/https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/ChinaMax/ChinaMax_Domain.txt"
+    url: "https://ghproxy.com/https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/China/China_Domain.txt"
+    path: ./ruleset/ChinaMaxDomain.txt
+    interval: 3600
+  Microsoft:
+    type: http
+    behavior: classical
+    url: "https://ghproxy.com/https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/Microsoft/Microsoft.yaml"
+    path: ./ruleset/Microsoft.yaml
+    interval: 3600
+  Google:
+    type: http
+    behavior: classical
+    url: "https://ghproxy.com/https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/Google/Google.yaml"
+    path: ./ruleset/Google.yaml
+    interval: 3600
+  Global:
+    type: http
+    behavior: classical
+    url: "https://ghproxy.com/https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/Global/Global.yaml"
+    # url: "https://ghproxy.com/https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/Proxy/Proxy.yaml"
+    path: ./ruleset/Global.yaml
+    interval: 3600
+  ForeignDomain:
+    type: http
+    behavior: domain
+    url: "https://ghproxy.com/https://raw.githubusercontent.com/Loyalsoldier/clash-rules/release/tld-not-cn.txt"
+    path: ./ruleset/ForeignDomain.txt
+    interval: 3600
+  # > 内存够的可以用 Global/Global_Domain.txt 那条
+  GlobalDomain:
+    type: http
+    behavior: domain
+    url: "https://ghproxy.com/https://raw.githubusercontent.com/Loyalsoldier/clash-rules/release/gfw.txt"
+    path: ./ruleset/GlobalDomain.txt
+    interval: 3600
+  # GlobalDomain:
+  #   type: http
+  #   behavior: domain-text
+  #   url: "https://ghproxy.com/https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/Global/Global_Domain.txt"
+  #   path: ./ruleset/GlobalDomain.txt
+  #   interval: 3600
+  # GlobalDomain:
+  #   type: http
+  #   behavior: domain-text
+  #   url: "https://ghproxy.com/https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/Proxy/Proxy_Domain.txt"
+  #   path: ./ruleset/GlobalDomain.txt
+  #   interval: 3600
+  # GlobalDomain:
+  #   type: http
+  #   behavior: domain
+  #   url: "https://ghproxy.com/https://raw.githubusercontent.com/Loyalsoldier/clash-rules/release/proxy.txt"
+  #   path: ./ruleset/GlobalDomain.txt
+  #   interval: 3600
+  Lan:
+    type: http
+    behavior: classical
+    url: "https://ghproxy.com/https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/Lan/Lan.yaml"
+    path: ./ruleset/Lan.yaml
+    interval: 3600
+rules:
+  # - "SCRIPT,quic,🛑 拦截"
+  # - "RULE-SET,Download,DIRECT"
+  - "SCRIPT,limitedGhproxy,🇨🇳 墙内受限"
+  - "SCRIPT,udpGhproxy,🇨🇳 墙内 UDP"
+  - "DOMAIN-SUFFIX,ghproxy.com,🇨🇳 墙内"
+  # > 自建 Sub-Store 服务器版域名
+  - "DOMAIN-SUFFIX,your-sub-store-api.com,🇨🇳 墙内"
+  - "RULE-SET,ChinaUnicom,中国联通"
+  - "RULE-SET,NetEaseMusic,网易云音乐"
+  - "SCRIPT,limitedUnbreak,🇨🇳 墙内受限"
+  - "SCRIPT,udpUnbreak,🇨🇳 墙内 UDP"
+  - "RULE-SET,Unbreak,🇨🇳 墙内"
+  - "RULE-SET,Advertising,🛑 拦截"
+  # - "RULE-SET,AdvertisingDomain,🛑 拦截"
+
+  - "SCRIPT,udpAppleProxy,🌑 墙外 UDP"
+  - "RULE-SET,AppleProxy,🌑 墙外"
+  - "SCRIPT,udpTestFlight,🌑 墙外 UDP"
+  - "RULE-SET,TestFlight,🌑 墙外"
+  - "SCRIPT,limitediCloud,🇨🇳 墙内受限"
+  - "SCRIPT,udpiCloud,🇨🇳 墙内 UDP"
+  - "RULE-SET,iCloud,🇨🇳 墙内"
+  - "SCRIPT,limitedApple,🇨🇳 墙内受限"
+  - "SCRIPT,udpApple,🇨🇳 墙内 UDP"
+  - "RULE-SET,Apple,🇨🇳 墙内"
+  - "SCRIPT,udpForeignDomain,🌑 墙外 UDP"
+  - "RULE-SET,ForeignDomain,🌑 墙外"
+  - "SCRIPT,udpGlobalDomain,🌑 墙外 UDP"
+  - "RULE-SET,GlobalDomain,🌑 墙外"
+  - "SCRIPT,udpGlobal,🌑 墙外 UDP"
+  - "RULE-SET,Global,🌑 墙外"
+  - "SCRIPT,udpGoogle,🌑 墙外 UDP"
+  - "RULE-SET,Google,🌑 墙外"
+  - "SCRIPT,udpMicrosoft,🌑 墙外 UDP"
+  - "RULE-SET,Microsoft,🌑 墙外"
+  - "SCRIPT,limitedChinaDomain,🇨🇳 墙内受限"
+  - "SCRIPT,udpChinaDomain,🇨🇳 墙内 UDP"
+  - "RULE-SET,ChinaDomain,🇨🇳 墙内"
+  - "SCRIPT,limitedChina,🇨🇳 墙内受限"
+  - "SCRIPT,udpChina,🇨🇳 墙内 UDP"
+  - "RULE-SET,China,🇨🇳 墙内"
+  - "SCRIPT,limitedTencent,🇨🇳 墙内受限"
+  - "SCRIPT,udpTencent,🇨🇳 墙内 UDP"
+  - "RULE-SET,Tencent,🇨🇳 墙内"
+  - "RULE-SET,Lan,DIRECT"
+  - "SCRIPT,limitedCN,🇨🇳 墙内受限"
+  - "SCRIPT,udpCN,🇨🇳 墙内 UDP"
+  - "GEOIP,CN,🇨🇳 墙内"
+  - "SCRIPT,udpMatch,🌑 墙外 UDP"
+  - "MATCH,🌑 墙外"
+  - "MATCH,REJECT"
