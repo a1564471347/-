@@ -3,7 +3,7 @@
 # 先开抓包，先开抓包，抓的是微信端,搜wParam，复制wParam值，没抓到等两小时在抓
 # 专区任务，专区抓fission-events.ccbft.com里面含有_ck_bbq_224，全部cookie，没抓到所有专区进一下
 # 格式 ccdck = wParam参数值#cookie值
-# 定时：一天两次
+# 定时：0 0 0,1 * * *
 # 注: 此脚本仅限个人使用,不得传播
 # 作者: 木兮
 import os
@@ -11,14 +11,14 @@ import random
 import re
 import time
 from datetime import datetime
-
 import requests
 
 app_ua = ''  # 用app的ua
 
 user_cookie = os.getenv("ccdck")
 flag = 1  # 1开启抓娃娃，0关闭
-doll_draw = 1  # 抓娃娃次数，为几一天只抽几次，总数小于10,
+doll_draw = 1  # 抓娃娃次数，为几一天只抽几次，总数小于10
+debug = 0  # 1开启调式
 
 
 class CCD:
@@ -95,39 +95,52 @@ class CCD:
                     response = session.post(url, json = data, timeout = 3)
                 else:
                     raise ValueError('Invalid HTTP method.')
+
                 response.raise_for_status()
+                if debug:
+                    print(response.json())
                 return response.json()
+
             except requests.Timeout as e:
                 print("请求超时:", str(e))
+
             except requests.RequestException as e:
                 print("请求错误:", str(e))
+
             except Exception as e:
                 print("其他错误:", str(e))
 
     # 获取token
     def get_token(self):
-        url = 'https://event.ccbft.com/api/flow/nf/shortLink/redirect/ccb_gjb?shareMDID=ZHCMD_8460172f-48b2-4612-a069-f04611760445&shareDepth=1&CCB_Chnl=6000199'
-        payload = {
-            "appId": "wxd513efdbf26b5744",
-            "shortId": "polFsWD2jPnjhOx9ruVBcA",
-            "archId": "ccb_gjb",
-            "wParam": self.w_param,
-            "channelId": "wx", "ifWxFirst": True
-        }
-        return_data = self.send_request(url, headers = self.token_headers, data = payload, method = 'POST')
-        if return_data['code'] != 200:
-            print(return_data['message'])
-            return
-        redirect_url = return_data['data'].get('redirectUrl')
-        self.wx_uuid = return_data['data'].get('wxUUID')
-        token = self.extract_token(redirect_url)
-        if token:
-            self.zhc_token = token
-            self.auth_login(token)
+        try:
+            url = 'https://event.ccbft.com/api/flow/nf/shortLink/redirect/ccb_gjb?shareMDID=ZHCMD_8460172f-48b2-4612-a069-f04611760445&shareDepth=1&CCB_Chnl=6000199'
+            payload = {
+                "appId": "wxd513efdbf26b5744",
+                "shortId": "polFsWD2jPnjhOx9ruVBcA",
+                "archId": "ccb_gjb",
+                "wParam": self.w_param,
+                "channelId": "wx", "ifWxFirst": True
+            }
+
+            return_data = self.send_request(url, headers = self.token_headers, data = payload, method = 'POST')
+            if return_data['code'] != 200:
+                print(return_data['message'])
+                return
+            redirect_url = return_data['data'].get('redirectUrl')
+            self.wx_uuid = return_data['data'].get('wxUUID')
+            token = self.extract_token(redirect_url)
+            if token:
+                self.zhc_token = token
+                self.auth_login(token)
+            else:
+                raise ValueError('刷新token失败')
+        except ValueError as e:
+            print(e)
 
     def extract_token(self, redirect_url):
         start_token_index = redirect_url.find("__dmsp_token=") + len("__dmsp_token=")
         end_token_index = redirect_url.find("&", start_token_index)
+
         token = None
         if start_token_index != -1 and end_token_index != -1:
             token = redirect_url[start_token_index:end_token_index]
@@ -157,6 +170,7 @@ class CCD:
     def user_info(self):
         url = f'https://m3.dmsp.ccb.com/api/businessCenter/mainVenue/getUserState?zhc_token={self.zhc_token}'
         return_data = self.send_request(url, headers = self.base_header, method = 'POST')
+
         if return_data['code'] != 200:
             print(return_data['message'])
             return
@@ -179,6 +193,7 @@ class CCD:
         if return_data['code'] != 200:
             print(return_data['message'])
             return
+
         print(f"今日营收: {reward_value}cc豆")
 
     # 签到
@@ -197,12 +212,15 @@ class CCD:
     def getlist(self):
         list_url = f'https://m3.dmsp.ccb.com/api/businessCenter/taskCenter/getTaskList?zhc_token={self.zhc_token}'
         payload = {"publishChannels": "03", "regionId": self.user_region}  # 440300
+
         return_data = self.send_request(url = list_url, headers = self.base_header, data = payload, method = 'POST')
         self.sleep()
+
         if return_data['code'] != 200:
             print(return_data['message'])
             return
         task_list = return_data['data'].get('浏览任务')
+
         for value in task_list:
             complete_status = value['taskDetail'].get('completeStatus')
 
@@ -218,14 +236,19 @@ class CCD:
         browse_url = f'https://m3.dmsp.ccb.com/api/businessCenter/taskCenter/browseTask?zhc_token={self.zhc_token}'
         receive_url = f'https://m3.dmsp.ccb.com/api/businessCenter/taskCenter/receiveReward?zhc_token={self.zhc_token}'
         payload = {"taskId": task_id, "browseSec": 1}
+
         browse_data = self.send_request(browse_url, headers = self.base_header, data = payload, method = 'POST')
         self.sleep()
+
         if browse_data['code'] != 200:
             print(browse_data['message'])
             return
+
         print(browse_data['message'])
+
         receive_data = self.send_request(receive_url, headers = self.base_header, data = payload, method = 'POST')
         self.sleep()
+
         if receive_data['code'] != 200:
             print(receive_data['message'])
             return
@@ -257,23 +280,25 @@ class CCD:
         remark = return_data['data'].get('remark')
         answer_list = return_data['data'].get('answerList')
         if remark:
+            # 匹配答案
             print('开始匹配正确答案')
             pattern = r"[，。？！“”、]"
+
             remark_cleaned = re.sub(pattern, "", remark)
+
             max_match_count = 0
             right_answer_id = None
 
-            # 遍历答案列表，与remark进行匹配
             for answer in answer_list:
                 answer_id = answer["id"]
                 answer_result = answer["answerResult"]
                 answer_cleaned = re.sub(pattern, "", answer_result)
-
                 match_count = 0
                 for word in answer_cleaned:
                     if word in remark_cleaned:
                         match_count += 1
                         remark_cleaned = remark_cleaned.replace(word, "", 1)
+
                 if match_count > max_match_count:
                     max_match_count = match_count
                     right_answer_id = answer_id
@@ -322,16 +347,20 @@ class CCD:
         return_data = requests.post(url1, headers = self.token_headers, data = payload1).json()
         if return_data['code'] != 200:
             return print(return_data['message'])
+
         redirect_url = return_data['data'].get('redirectUrl')
         requests.get(url = redirect_url, headers = headers)
+
         try:
             res = requests.get(url = url2, headers = headers)
             data = res.text
             csrf_token, authorization = self.extract_csrf_and_auth(data)
+
             if csrf_token and authorization:
                 self.bus_headers['x-csrf-token'] = csrf_token
                 self.bus_headers['authorization'] = f'Bearer {authorization}'
                 self.sleep()
+
                 print('\n----代发专区----')
                 # self.game_id()
                 print('\n----养老专区----')
@@ -352,21 +381,24 @@ class CCD:
     def extract_csrf_and_auth(self, data):
         csrf_token_pattern = r'<meta\s+name=csrf-token\s+content="([^"]+)">'
         authorization_pattern = r'<meta\s+name=Authorization\s+content="([^"]+)">'
+
         csrf_token_match = re.search(csrf_token_pattern, data)
         authorization_match = re.search(authorization_pattern, data)
+
         if csrf_token_match and authorization_match:
             return csrf_token_match.group(1), authorization_match.group(1)
         return None, None
 
     # 代发专区
+
     # 养老专区新
     def turn(self):
         index_url = 'https://fission-events.ccbft.com/a/224/5P87Md3y/index?CCB_Chnl=2030005'
         tasklist_url = 'https://fission-events.ccbft.com/activity/dmspmileage/getindexdata/224/5P87Md3y'
         go_url = 'https://fission-events.ccbft.com/activity/dmspmileage/go/224/5P87Md3y'
+
         requests.get(url = index_url, headers = self.bus_headers)
         tasks_data = self.send_request(tasklist_url, headers = self.bus_headers)
-
         if tasks_data['status'] != 'success':
             return print(tasks_data['message'])
         task_list = tasks_data.get('data', {}).get('acttask', {}).get('limit_time')
@@ -375,6 +407,7 @@ class CCD:
             title = task.get('title')
             state = task.get('state')
             reward = task.get('reward')
+
             if state == 1:
                 print(f'--已完成: {title}')
             else:
@@ -385,6 +418,7 @@ class CCD:
 
                 if do_data['status'] != 'success':
                     return print(do_data['message'])
+
                 print(f'--浏览成功获得: {reward} 里程')
                 self.sleep()
 
@@ -394,36 +428,41 @@ class CCD:
         rewards = query_data.get('data', {}).get('map', {}).get('config').get('node')
         if surplus != '0':
             go_data = self.send_request(go_url, headers = self.bus_headers, method = 'POST')
+
             mileage_go = go_data.get('data', {}).get('mileage_go', '')
             user_node = go_data.get('data', {}).get('user_node_value')
             print(f'前进: {mileage_go}里程， 当前: {user_node}里程')
         for reward in rewards:
             value = reward.get('value')
             state = reward.get('state')
+
             if value == 0 or state != 3:
                 continue
+
             getreward_url = 'https://fission-events.ccbft.com/activity/dmspmileage/draw/224/5P87Md3y'
             reward_payload = {"value": value}
             rewrd_data = self.send_request(getreward_url, headers = self.bus_headers, data = reward_payload,
                                            method = 'POST')
             if rewrd_data['status'] != 'success':
                 return print(rewrd_data['message'])
+
             prizename = rewrd_data.get('data', {}).get('prizename')
             print(f'领取 {value}里程奖励: {prizename}')
 
     # 跨境专区新
     def border_draw(self):
+        index_url = 'https://fission-events.ccbft.com/a/224/1m0xM2mx/index?CCB_Chnl=6000117'
         query_url = 'https://fission-events.ccbft.com/Component/draw/getUserExtInfo/224/1m0xM2mx'
         draw_url = 'https://fission-events.ccbft.com/Component/draw/commonDrawPrize/224/1m0xM2mx'
+        requests.get(url = index_url, headers = self.bus_headers)
         query_data = self.send_request(query_url, headers = self.bus_headers)
         if query_data['status'] != 'success':
             return print(query_data['message'])
         remain = query_data['data'].get('remain_num')
         if remain == '0':
             return print('--当前剩余抽奖次数为0')
-
-        draw_data = self.send_request(draw_url, headers = self.bus_headers, method = 'POST')
         self.sleep()
+        draw_data = self.send_request(draw_url, headers = self.bus_headers, method = 'POST')
         if draw_data['status'] != 'success':
             print(draw_data['message'])
             return
@@ -435,13 +474,16 @@ class CCD:
         task_url = 'https://fission-events.ccbft.com/Component/task/lists/224/8ZWXBM3w'
         requests.get(url = index_url, headers = self.bus_headers)
         tasks_data = self.send_request(task_url, headers = self.bus_headers)
-        time.sleep(3)
+        self.sleep()
         if tasks_data['status'] != 'success':
             print(tasks_data['message'])
             return
+
         task_list = tasks_data['data'].get('userTask')
+
         for value in task_list:
             complete_status = value['finish']
+
             if complete_status == 1:
                 print('--已完成该任务，继续浏览下一个任务')
                 continue
@@ -456,18 +498,22 @@ class CCD:
                 return
             print('--浏览完成')
             time.sleep(3)
+
         print('--已完成全部任务，去掷骰子')
+        time.sleep(3)
         self.throw()
 
     def throw(self):
         query_url = 'https://fission-events.ccbft.com/activity/dmspshzq/getIndex/224/8ZWXBM3w'
         query_data = self.send_request(query_url, headers = self.bus_headers)
+
         if query_data['status'] != 'success':
             print(query_data['message'])
             return
         remain_num = query_data['data'].get('remain_num')
         if remain_num == '0':
             return print('当前没有骰子了')
+        self.sleep()
 
         num = int(remain_num)
         draw_url = 'https://fission-events.ccbft.com/activity/dmspshzq/drawPrize/224/8ZWXBM3w'
@@ -480,11 +526,13 @@ class CCD:
             if draw_data['status'] != 'success':
                 print(draw_data['message'])
                 return
+
             add_step = draw_data['data'].get('add_step')
             current_step = draw_data['data'].get('current_step')
             prize_name = draw_data['data'].get('prize_name')
             prizes.append(f"前进步数:{add_step},当前步数:{current_step}\n获得奖励:{prize_name}")
-            time.sleep(2)
+            time.sleep(3)
+
         if prizes:
             print('\n'.join(prizes))
 
@@ -498,12 +546,15 @@ class CCD:
             return
         remain_num = num_data['data'].get('remain_num', 0)
         num = int(remain_num)
+
         if num == 0:
             print('当前剩余游戏次数为0')
             return
+
         id_url = 'https://fission-events.ccbft.com/activity/dmspxbmountain/startChallenge/224/jmXN4Q3d'
         draw_url = 'https://fission-events.ccbft.com/Component/draw/commonDrawPrize/224/jmXN4Q3d'
         payload = {}
+
         for _ in range(num):
             id_data = self.send_request(id_url, headers = self.bus_headers, data = payload, method = 'POST')
 
@@ -513,6 +564,7 @@ class CCD:
             game_id = id_data.get('data')
             print('获取成功，开始登山游戏')
             time.sleep(20)
+
             game_url = 'https://fission-events.ccbft.com/activity/dmspxbmountain/doChallenge/224/jmXN4Q3d'
             payload_game = {"l_id": game_id, "stage": 13, "score": 200}
             msg_data = self.send_request(game_url, headers = self.bus_headers, data = payload_game,
@@ -524,10 +576,13 @@ class CCD:
             draw_payload = {}
             draw_data = self.send_request(draw_url, headers = self.bus_headers, data = draw_payload,
                                           method = 'POST')
+            if draw_data.get('status') != 'success':
+                print(draw_data.get('message'))
+                return
             mes = draw_data.get('message')
             prizename = draw_data.get('data', {}).get('prizename', '')
             print(f'{mes}  {prizename}')
-            self.sleep(3, 6)
+            time.sleep(5)
 
     # 抓娃娃
     def get_doll(self):
@@ -541,7 +596,6 @@ class CCD:
         draw_num = query_data.get('data', {}).get('user_day_draw_num', 0)
         num = 10 - int(draw_num)
         num2 = 10 - doll_draw
-
         print(f'当前剩余游戏次数: {num}')
         while num > num2:
             draw_payload = {}
@@ -553,9 +607,8 @@ class CCD:
             msg = draw_data.get('message')
             prizename = draw_data.get('data', {}).get('prizename', '')
             print(f'{msg}  {prizename}')
-
             num -= 1
-            time.sleep(5)
+            time.sleep(3)
 
     # 查询cc豆及过期cc豆时间
     def get_user_ccd(self):
