@@ -1,11 +1,10 @@
 import requests,time,re,json,random
 from urllib import parse
-#微信公众号【偶尔敲代码】
 
 phone = ['账号1用户名','账号2用户名']#Zepp Life账号，可手机或邮箱
 password = ['账号1密码','账号2密码'] #Zepp Life密码
-step_min = 3000 #最小步数
-step_max = 5000 #最大步数
+step_min = 30000 #最小步数
+step_max = 50000 #最大步数
 p_token= '' #push+ token
 content=''
 for i in range(len(phone)):
