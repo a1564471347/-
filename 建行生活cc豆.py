@@ -1,1083 +1,684 @@
-# !/usr/bin/python3
-# -*- coding: utf-8 -*-
-# @Time    : 2023/8/7 14:17
-# @Author  : ziyou
-# -------------------------------
-# cron "5 7,12,18 * * *" script-path=xxx.py,tag=匹配cron用
-# const $ = new Env('建行生活')
-# 活动信息: 奋斗季cc豆 功能：每日营收，签到 浏览任务，答题，抽奖，专区任务，互助
-# 先开抓包，先开抓包，抓的是微信端,搜 wParam，复制wParam值，没抓到等两小时在抓
-# 抓里面含有 _ck_bbq_224，全部cookie，没抓到所有专区进一下
-# 建行生活
-# export ccb_ck='wParam参数值#cookie值&wParam参数值#cookie值',多账号使用换行或&
-# 参考大佬 木兮 的本，在此致谢
-
-
-import json
+# 软件:建行生活
+# 活动信息: 奋斗季cc豆 功能：每日营收，签到 浏览任务，答题，抽奖，专区任务
+# 先开抓包，先开抓包，抓的是微信端,搜wParam，复制wParam值，没抓到等两小时在抓
+# 专区任务，专区抓fission-events.ccbft.com里面含有_ck_bbq_224，全部cookie，没抓到所有专区进一下
+# 格式 ccdck = wParam参数值#cookie值
+# 定时：一天两次
+# 注: 此脚本仅限个人使用,不得传播
+# 作者: 木兮
 import os
 import random
 import re
-import sys
 import time
+from datetime import datetime
 
-import cv2
-import numpy as np
 import requests
 
-CCB_CK_LIST = []
+app_ua = ''  # 用app的ua，不填也能跑
 
-CCB_DRAW_PRIZE = True  # 超级娃娃机抽奖
-SHOOT_BASKETBALL = True  # 街头投篮王
+user_cookie = os.getenv("ccdck")
+doll_flag = 1  # 1开启抓娃娃，0关闭
+basket_flag = 1  # 1开启投篮球，0关闭
 
-IDENT_DICT = {}
-NEW_IDENT_DICT = {}
-
-ccb_ck = os.getenv("ccb_ck")
-if ccb_ck:
-    CCB_CK_LIST += ccb_ck.replace("&", "\n").split("\n")
+doll_draw = 1  # 抓娃娃次数，为几一天只抽几次，总数小于10
+basket_draw = 1  # 投篮球次数，为几一天只玩几次，总数小于5
+debug = 0  # 开启调式
 
 
-# cookie字符串转字典
-def cookie_str_to_dict(cookie_str):
-    cookie_list = cookie_str.split(';')
-    cookie_dict = {}
-    for i in cookie_list:
-        result = re.match(r'(.*?)=(.*?)$', i.strip())
-        if result:
-            cookie_dict.update({result.group(1): result.group(2)})
-    return cookie_dict
+class CCD:
+    user_region = None
+    zhc_token = None
+    wx_uuid = None
+    base_header = {
+        'Host': 'm3.dmsp.ccb.com',
+        'accept': 'application/json, text/plain, */*',
+        'user-agent': app_ua,
+        'origin': 'https://m3.dmsp.ccb.com',
+        'x-requested-with': 'com.tencent.mm',
+        'accept-language': 'zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7',
+        'content-type': 'application/json'
+    }
+    token_headers = {
+        'Host': 'event.ccbft.com',
+        'accept': 'application/json, text/plain, */*',
+        'user-agent': app_ua,
+        'origin': 'https://event.ccbft.com',
+        'x-requested-with': 'com.tencent.mm',
+        'accept-language': 'zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7',
+        'content-type': 'application/json'
+    }
 
+    def __init__(self, ccb_cookie):
+        self.w_param = ccb_cookie.split("#")[0]
+        self.zq_cookie = ccb_cookie.split("#")[1]
+        self.bus_headers = {
+            'Host': 'fission-events.ccbft.com',
+            'pragma': 'no-cache',
+            'cache-control': 'no-cache',
+            'accept': 'application/json, text/plain, */*',
+            'x-csrf-token': None,
+            'x-requested-with': 'XMLHttpRequest',
+            'authorization': None,
+            'user-agent': app_ua,
+            'origin': 'https://fission-events.ccbft.com',
+            'sec-fetch-site': 'same-origin',
+            'sec-fetch-mode': 'cors',
+            'sec-fetch-dest': 'empty',
+            'referer': 'https://fission-events.ccbft.com/a/224/kmenz5Zd/game',
+            'accept-language': 'zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7',
+            'Cookie': self.zq_cookie,
+            'content-type': 'application/json'
+        }
 
-# 使用chatgpt答题
-def chatgpt_answer_question(question_name, answer_str, knowledge_points=''):
-    question_str = (f'{knowledge_points} 请回答一下问题，保证相对正确，仅需要回复答案前的序号，不需要回答其他内容！'
-                    f'问题：{question_name} \n选项：\n{answer_str}')
-    print(question_str)
-    return ''
+    def run(self):
+        self.get_token()
+        self.region()
+        self.user_info()
+        self.sign_in()
+        self.getlist()
+        self.answer_state()
+        print('\n======== 专区任务 ========')
+        time.sleep(random.randint(3, 5))
+        self.get_csrftoken()
+        self.get_user_ccd()
 
+    # 随机延迟默认1-1.5
+    def sleep(self, min_delay=1, max_delay=1.5):
+        delay = random.uniform(min_delay, max_delay)
+        time.sleep(delay)
 
-# 识别图片进行排序
-def identify_sort(response_dict):
-    thumb_dict = response_dict.get('data').get('thumb')
-    big_url = response_dict.get('data').get('img')
-    big_image = requests.get(big_url).content
-    # 将字节码转换为numpy数组
-    image_np_array = np.frombuffer(big_image, np.uint8)
-    # 使用imdecode函数解码字节码并加载图像
-    image = cv2.imdecode(image_np_array, cv2.IMREAD_COLOR)
-    # 将图像大小调整为750x750像素
-    big_image = cv2.resize(image, (750, 750))
-    points = []
-    for key, url in thumb_dict.items():
-        small_image = requests.get(url).content
-        # 将字节码转换为numpy数组
-        image_np_array = np.frombuffer(small_image, np.uint8)
-        # 使用imdecode函数解码字节码并加载图像
-        small_image = cv2.imdecode(image_np_array, cv2.IMREAD_COLOR)
-        # 执行匹配
-        result = cv2.matchTemplate(big_image, small_image, cv2.TM_CCOEFF_NORMED)
-        # 定位位置
-        _, _, _, best_match = cv2.minMaxLoc(result)
-        # print(best_match)
-        points += [list(best_match) + [key]]
-        # print(points)
-    point_0 = []
-    point_250 = []
-    point_500 = []
-    for point in points:
-        if point[1] < 50:
-            point_0.append(point)
-        if 200 < point[1] < 300:
-            point_250.append(point)
-        if 450 < point[1]:
-            point_500.append(point)
-    sort_list = sorted(point_0) + sorted(point_250) + sorted(point_500)
-    # print(sort_list)
-    return ','.join([i[2] for i in sort_list])
+    def send_request(self, url, headers, data=None, method='GET', cookies=None):
+        with requests.Session() as session:
+            session.headers.update(headers)
+            if cookies is not None:
+                session.cookies.update(cookies)
 
+            try:
+                if method == 'GET':
+                    response = session.get(url, timeout = 3)
+                elif method == 'POST':
+                    response = session.post(url, json = data, timeout = 3)
+                else:
+                    raise ValueError('Invalid HTTP method.')
 
-class CCBLife:
-    def __init__(self, ck, index):
-        self.w_param, self.cookies = ck.split("#")
-        self.index = index
-        self.wx_uuid = ''
-        self.token = ''
-        self.ticket = ''
-        self.businessCenter_headers = {'zhc_token': self.token}
-        self.Component_headers = {'x-xsrf-token': '', 'authorization': ''}
-        self.session = requests.Session()
-        self.session.cookies.update(cookie_str_to_dict(self.cookies))
-        self.regionId = "430100"  # 地区id
+                response.raise_for_status()
+                if debug:
+                    print(response.json())
+                return response.json()
+
+            except requests.Timeout as e:
+                print("请求超时:", str(e))
+
+            except requests.RequestException as e:
+                print("请求错误:", str(e))
+
+            except Exception as e:
+                print("其他错误:", str(e))
 
     # 获取token
     def get_token(self):
-        url = "https://event.ccbft.com/api/flow/nf/shortLink/redirect/ccb_gjb"
-        _json = {
-            "appId": "wxd513efdbf26b5744",
-            "shortId": "polFsWD2jPnjhOx9ruVBcA",
-            "archId": "ccb_gjb",
-            "wParam": self.w_param,
-            "channelId": "wx", "ifWxFirst": True
-        }
-        response = self.session.post(url, json=_json)
-        response_dict = response.json()
-        # print(response_dict)
-        redirect_url = response_dict.get('data', {}).get('redirectUrl')
-        dmsp_token = re.findall(r'__dmsp_token=(.*?)&', redirect_url)
-        dmsp_ticket = re.findall(r'__dmsp_ticket=(.*?)$', redirect_url)
-        if dmsp_token:
-            self.wx_uuid = response_dict['data'].get('wxUUID')
-            self.token = dmsp_token[0]
-            self.ticket = dmsp_ticket[0]
-            self.businessCenter_headers = {'zhc_token': self.token, 'cookie': self.cookies}
-            return True
-        print(f'ck可能已失效！ {response_dict}')
-        return False
+        try:
+            url = 'https://event.ccbft.com/api/flow/nf/shortLink/redirect/ccb_gjb?shareMDID=ZHCMD_8460172f-48b2-4612-a069-f04611760445&shareDepth=1&CCB_Chnl=6000199'
+            payload = {
+                "appId": "wxd513efdbf26b5744",
+                "shortId": "polFsWD2jPnjhOx9ruVBcA",
+                "archId": "ccb_gjb",
+                "wParam": self.w_param,
+                "channelId": "wx", "ifWxFirst": True
+            }
 
-    # 使用token登录
-    def sign_in(self):
-        if not self.get_token():
-            return False
-        url = "https://m3.dmsp.ccb.com/api/businessCenter/auth/login"
-        _json = {"token": self.token, "channelId": "wx"}
-        response = self.session.post(url, json=_json)
-        response_dict = response.json()
-        # print(response_dict)
-        if response_dict.get('success') is True:
-            self.get_component_headers()
-            return True
-        print(response_dict.get('message'))
-        return False
+            return_data = self.send_request(url, headers = self.token_headers, data = payload, method = 'POST')
+            if return_data['code'] != 200:
+                print(return_data['message'])
+                raise ValueError('刷新token,请检查变量格式是否正确')
+            redirect_url = return_data['data'].get('redirectUrl')
+            self.wx_uuid = return_data['data'].get('wxUUID')
+            token = self.extract_token(redirect_url)
+            if token:
+                self.zhc_token = token
+                self.auth_login(token)
+            else:
+                raise ValueError('刷新token失败')
 
-    # 获取用户信息
-    def get_user(self):
-        url = "https://m3.dmsp.ccb.com/api/businessCenter/user/getUser"
-        _json = {"regionId": self.regionId}
-        response = self.session.post(url, headers=self.businessCenter_headers, json=_json)
-        response_dict = response.json()
-        # print(response_dict)
-        user_name = response_dict.get('data').get('userDTO').get('userName')
-        response_dict = self.get_user_state()
-        level = response_dict.get('data').get('level')
-        need_growth_exp = response_dict.get('data').get('needGrowthExp')  # 升级还需要的经验
-        next_level_need_growth_exp = response_dict.get('data').get('nextLevelNeedGrowthExp')
-        print(f"{user_name} Lv{level}({next_level_need_growth_exp - need_growth_exp}/{next_level_need_growth_exp}) "
-              f"CC豆：{self.get_user_ccd()}")
+        except ValueError as e:
+            print(e)
 
-    # 获取用户CC豆数量
-    def get_user_ccd(self):
-        url = "https://m3.dmsp.ccb.com/api/businessCenter/user/getUserCCD"
-        _json = {}
-        response = self.session.post(url, headers=self.businessCenter_headers, json=_json)
-        response_dict = response.json()
-        # print(response_dict)
-        return response_dict.get('data').get('userCCBeanInfo').get('count')
+    def extract_token(self, redirect_url):
+        start_token_index = redirect_url.find("__dmsp_token=") + len("__dmsp_token=")
+        end_token_index = redirect_url.find("&", start_token_index)
+
+        token = None
+        if start_token_index != -1 and end_token_index != -1:
+            token = redirect_url[start_token_index:end_token_index]
+        return token
+
+    # 登录
+    def auth_login(self, token):
+        url = 'https://m3.dmsp.ccb.com/api/businessCenter/auth/login'
+        payload = {"token": token, "channelId": "wx"}
+        return_data = self.send_request(url, headers = self.base_header, data = payload, method = 'POST')
+        self.sleep()
+        if return_data['code'] != 200:
+            print(return_data['message'])
+            return
+
+    # 获取用户地区代码
+    def region(self):
+        url = f'https://m3.dmsp.ccb.com/api/businessCenter/gis/getAddress?zhc_token={self.zhc_token}'
+        payload = {"lgt": 116.495434, "ltt": 40.3976539, "flag": 1}
+        return_data = self.send_request(url, headers = self.base_header, data = payload, method = 'POST')
+        self.sleep()
+        if return_data['code'] != 200:
+            print(return_data['message'])
+            return
+        self.user_region = return_data['data'].get('code')
+
+    # 查询用户等级
+    def user_info(self):
+        url = f'https://m3.dmsp.ccb.com/api/businessCenter/mainVenue/getUserState?zhc_token={self.zhc_token}'
+        return_data = self.send_request(url, headers = self.base_header, method = 'POST')
+
+        if return_data['code'] != 200:
+            print(return_data['message'])
+            return
+        current_level = return_data['data'].get('currentLevel')
+        need_exp = return_data['data'].get('needGrowthExp') - return_data['data'].get('currentLevelGrowthExp')
+        level = return_data['data'].get('currentProtectLevel')
+        reward_id = return_data['data'].get('zhcRewardInfo').get('id')
+        reward_type = return_data['data'].get('zhcRewardInfo').get('rewardType')
+        reward_value = return_data['data'].get('zhcRewardInfo').get('rewardValue')
+        print(f"当前用户等级{current_level}级")
+        print(f"距下一级还需{need_exp}成长值")
+        self.income(level, reward_id, reward_type, reward_value)
+
+    # 每日营收
+    def income(self, level, reward_id, reward_type, reward_value):
+        url = f'https://m3.dmsp.ccb.com/api/businessCenter/mainVenue/receiveLevelReward?zhc_token={self.zhc_token}'
+        payload = {"level": level, "rewardId": reward_id, "levelRewardType": reward_type}
+        return_data = self.send_request(url, headers = self.base_header, data = payload, method = 'POST')
+        self.sleep()
+        if return_data['code'] != 200:
+            print(return_data['message'])
+            return
+        print(f"今日营收: {reward_value}cc豆")
 
     # 签到
-    def check_in(self):
-        url = "https://m3.dmsp.ccb.com/api/businessCenter/taskCenter/signin"
-        _json = {"taskId": 96}
-        response = self.session.post(url, headers=self.businessCenter_headers, json=_json)
-        response_dict = response.json()
-        # print(response_dict)
-        print(response_dict.get('message'))
-
-    # 查询用户状态
-    def get_user_state(self):
-        url = 'https://m3.dmsp.ccb.com/api/businessCenter/mainVenue/getUserState'
-        response = self.session.post(url, headers=self.businessCenter_headers)
-        return response.json()
-
-    # 领取每日营收
-    def receive_daily_earnings(self):
-        response_dict = self.get_user_state()
-        receive_result = response_dict.get('data').get('receiveResult')
-        if receive_result == '00':
-            print('今日已经领取过了！')
+    def sign_in(self):
+        signin_url = f'https://m3.dmsp.ccb.com/api/businessCenter/taskCenter/signin?zhc_token={self.zhc_token}'
+        signin_payload = {"taskId": 96}
+        return_data = self.send_request(url = signin_url, headers = self.base_header, data = signin_payload,
+                                        method = 'POST')
+        self.sleep()
+        if return_data['code'] != 200:
+            print(return_data['message'])
             return
-        level = response_dict.get('data').get('level')
-        reward_id = response_dict.get('data').get('zhcRewardInfo').get('id')
-        level_reward_type = response_dict.get('data').get('zhcRewardInfo').get('rewardType')
-        url = "https://m3.dmsp.ccb.com/api/businessCenter/mainVenue/receiveLevelReward"
-        _json = {"level": level, "rewardId": reward_id, "levelRewardType": level_reward_type}
-        response = self.session.post(url, headers=self.businessCenter_headers, json=_json)
-        response_dict = response.json()
-        print(response_dict.get('message'))
+        print(return_data['message'])
 
-    # 每日答题
-    def daily_answer_question(self):
-        url = "https://m3.dmsp.ccb.com/api/businessCenter/zhcUserDayAnswer/getAnswerStatus"
-        response = self.session.get(url, headers=self.businessCenter_headers)
-        response_dict = response.json()
-        # print(response_dict)
-        if response_dict.get('data').get('answerState') == 'Y':  # 今天已经答题过
-            print(response_dict.get('message'))
+    # 获取浏览任务列表
+    def getlist(self):
+        list_url = f'https://m3.dmsp.ccb.com/api/businessCenter/taskCenter/getTaskList?zhc_token={self.zhc_token}'
+        payload = {"publishChannels": "03", "regionId": self.user_region}  # 440300
+
+        return_data = self.send_request(url = list_url, headers = self.base_header, data = payload, method = 'POST')
+        self.sleep()
+
+        if return_data['code'] != 200:
+            print(return_data['message'])
             return
-        url = "https://m3.dmsp.ccb.com/api/businessCenter/zhcUserDayAnswer/queryQuestionToday"
-        response = self.session.get(url, headers=self.businessCenter_headers)
-        response_dict = response.json()
-        # print(response_dict)
-        question_id = response_dict.get('data').get('questionId')
-        question_name = response_dict.get('data').get('questionName')
-        answer_list = response_dict.get('data').get('answerList')
-        answer_str = ''
-        for answer in answer_list:
-            answer_str += f"{answer.get('id')} {answer.get('answerResult')}\n"
-        response_text = chatgpt_answer_question(question_name, answer_str)
-        print(response_text)
-        for answer in answer_list:
-            if str(answer.get('id')) in response_text:
-                _json = {"questionId": question_id, "answerIds": str(answer.get('id'))}
-                break
-        else:
-            print(f'使用chatgpt回答问题失败！chatgpt：{response_text}')
-            print('开始随机选择！')
-            _json = {"questionId": question_id, "answerIds": str(random.choice(answer_list).get('id'))}
-        time.sleep(5)
-        url = "https://m3.dmsp.ccb.com/api/businessCenter/zhcUserDayAnswer/userAnswerQuestion"
-        response = self.session.post(url, headers=self.businessCenter_headers, json=_json)
-        response_dict = response.json()
-        print(response_dict.get('message'))
 
-    # 领取点亮所有勋章奖励
-    def receive_500ccd_reward(self):
-        url = 'https://m3.dmsp.ccb.com/api/businessCenter/zhc/medalPage/allGather'
-        _json = {}
-        response = self.session.post(url, headers=self.businessCenter_headers, json=_json)
-        response_dict = response.json()
-        print(response_dict.get('message'))
+        task_list = return_data['data'].get('浏览任务')
 
-    # 激活勋章页
-    def activation_medal(self):
-        url = 'https://m3.dmsp.ccb.com/api/businessCenter/zhc/medalPage/getUserLightUpStatus'
-        _json = {}
-        response = self.session.post(url, headers=self.businessCenter_headers, json=_json)
-        response_dict = response.json()
-        # print(response_dict)
-        if response_dict.get('data').get('hasPopupLightUpMedal') == 'Y' and response_dict.get('data').get(
-                'hasReceiveAllGatherReward') == 'N':
-            print('所有勋章已激活，开始领取额外CC豆奖励！')
-            self.receive_500ccd_reward()
-        light_up_status_dict: dict = response_dict.get('data').get('lightUpStatus')
-        for medal_id, status in light_up_status_dict.items():
-            if status.get('isReach') == 'Y' and status.get('isPopup') == 'N':
-                print(f'开始激活{status.get("medalName")}勋章')
-                url = 'https://m3.dmsp.ccb.com/api/businessCenter/zhc/medalPage/confirmMedalPopup'
-                _json = {"medalId": medal_id}
-                response = self.session.post(url, headers=self.businessCenter_headers, json=_json)
-                response_dict = response.json()
-                print(response_dict.get('message'))
+        for value in task_list:
+            complete_status = value['taskDetail'].get('completeStatus')
 
-    # 升级每日营收等级
-    def upgrade_daily_earnings_level(self):
-        response_dict = self.get_user_state()
-        # print(response_dict)
-        level_state = response_dict.get('data').get('levelState')  # 01不可升级 02可升级
-        need_growth_exp = response_dict.get('data').get('needGrowthExp')  # 升级还需要的经验
-        if need_growth_exp != 0 and level_state != '02':
-            print(f'当前不可升级，离下一等级还差{need_growth_exp}成长值！')
-            return
-        url = 'https://m3.dmsp.ccb.com/api/businessCenter/mainVenue/upgradeUser'
-        _json = {}
-        response = self.session.post(url, headers=self.businessCenter_headers, json=_json)
-        response_dict = response.json()
-        if response_dict.get('data'):
-            print(f"成功升级为：{response_dict.get('data')[0].get('rewardName')}")
-
-    # 去完成任务
-    def complete_task(self, task_id, browse_sec):
-        url = 'https://m3.dmsp.ccb.com/api/businessCenter/taskCenter/browseTask'
-        _json = {"taskId": task_id, "browseSec": browse_sec}
-        response = self.session.post(url, headers=self.businessCenter_headers, json=_json)
-        response_dict = response.json()
-        print(response_dict.get('message'))
-
-    # 领取任务奖励
-    def receive_task_reward(self, task_id):
-        url = 'https://m3.dmsp.ccb.com/api/businessCenter/taskCenter/receiveReward'
-        _json = {"taskId": task_id}
-        response = self.session.post(url, headers=self.businessCenter_headers, json=_json)
-        response_dict = response.json()
-        print(response_dict.get('message'))
-
-    # 执行浏览任务
-    def execute_task(self):
-        url = 'https://m3.dmsp.ccb.com/api/businessCenter/taskCenter/getTaskList'
-        _json = {"publishChannels": "03", "regionId": self.regionId}
-        response = self.session.post(url, headers=self.businessCenter_headers, json=_json)
-        response_dict = response.json()
-        # print(response_dict)
-        browse_tasks_list = response_dict.get('data').get('浏览任务')
-        # print(browse_tasks_list)
-        for task in browse_tasks_list:
-            complete_status = task.get('taskDetail').get('completeStatus')
             if complete_status == '02':
-                continue
-            task_name = task.get('taskName')
-            print(f'★开始任务：{task_name}')
-            # print(task)
-            task_id = task.get('id')
-            browse_sec = task.get('taskDetail').get('browseSec')
-            self.complete_task(task_id, browse_sec)
-            self.receive_task_reward(task_id)
+                print(f"--已完成: {value['taskName']}")
+            else:
+                task_id = value['id']
+                task_name = value['taskName']
+                print(f'---去完成: {task_name}')
+                self.execute_task(task_id)
 
-    # 获取Component_headers
-    def get_component_headers(self):
-        url = 'https://event.ccbft.com/api/flow/nf/shortLink/redirect/ccb_gjb?CCB_Chnl=1002702'
-        _json = {"appId": "wxd513efdbf26b5744", "shortId": "jd9H3uCkzHaQBn8aeq5NWQ", "archId": "ccb_gjb",
-                 "channelId": "wx", "ifWxFirst": False, "wxUUID": self.wx_uuid}
-        response = self.session.post(url, headers=self.businessCenter_headers, json=_json)
-        response_dict = response.json()
-        # print(response_dict)
-        redirect_url = response_dict.get('data').get('redirectUrl')
-        self.session.get(redirect_url)  # 授权登录专区活动
+    def execute_task(self, task_id):
+        browse_url = f'https://m3.dmsp.ccb.com/api/businessCenter/taskCenter/browseTask?zhc_token={self.zhc_token}'
+        receive_url = f'https://m3.dmsp.ccb.com/api/businessCenter/taskCenter/receiveReward?zhc_token={self.zhc_token}'
+        payload = {"taskId": task_id, "browseSec": 1}
 
-        url = 'https://fission-events.ccbft.com/a/224/kmenz5Zd?CCB_Chnl=6000110'
-        response = self.session.get(url, headers=self.businessCenter_headers)
-        response_text = response.text
+        browse_data = self.send_request(browse_url, headers = self.base_header, data = payload, method = 'POST')
+        self.sleep()
+
+        if browse_data['code'] != 200:
+            print(browse_data['message'])
+            return
+        print(browse_data['message'])
+
+        receive_data = self.send_request(receive_url, headers = self.base_header, data = payload, method = 'POST')
+        self.sleep()
+        if receive_data['code'] != 200:
+            print(receive_data['message'])
+            return
+        print(receive_data['message'])
+
+    # 获取答题state
+    def answer_state(self):
+        url = f'https://m3.dmsp.ccb.com/api/businessCenter/zhcUserDayAnswer/getAnswerStatus?zhc_token={self.zhc_token}'
+        return_data = self.send_request(url, headers = self.base_header)
+        if return_data['code'] == 200:
+            if return_data['data'].get('answerState') == 'Y':
+                return print(return_data['message'])
+            else:
+                # 获取今日题目
+                print('获取今日题目')
+                self.get_question()
+        else:
+            return print(return_data['message'])
+
+    # 获取题目
+    def get_question(self):
+        url = f'https://m3.dmsp.ccb.com/api/businessCenter/zhcUserDayAnswer/queryQuestionToday?zhc_token={self.zhc_token}'
+        return_data = self.send_request(url, headers = self.base_header)
+        self.sleep()
+        if return_data['code'] != 200:
+            print(return_data['message'])
+            return
+        question_id = return_data['data'].get('questionId')
+        remark = return_data['data'].get('remark')
+        answer_list = return_data['data'].get('answerList')
+        if remark:
+            # 匹配答案
+            print('开始匹配正确答案')
+            pattern = r"[，。？！“”、]"
+            remark_cleaned = re.sub(pattern, "", remark)
+
+            max_match_count = 0
+            right_answer_id = None
+            for answer in answer_list:
+                answer_id = answer["id"]
+                answer_result = answer["answerResult"]
+                answer_cleaned = re.sub(pattern, "", answer_result)
+
+                match_count = 0
+                for word in answer_cleaned:
+                    if word in remark_cleaned:
+                        match_count += 1
+                        remark_cleaned = remark_cleaned.replace(word, "", 1)
+
+                if match_count > max_match_count:
+                    max_match_count = match_count
+                    right_answer_id = answer_id
+            print("匹配成功，开始答题")
+            self.answer(question_id, right_answer_id)
+        else:
+            print('暂无提示随机答题')
+            right_answer_id = random.choice(answer_list)['id']
+            self.answer(question_id, right_answer_id)
+
+    # 答题
+    def answer(self, question_id, answer_ids):
+        url = f'https://m3.dmsp.ccb.com/api/businessCenter/zhcUserDayAnswer/userAnswerQuestion?zhc_token={self.zhc_token}'
+        payload = {"questionId": question_id, "answerIds": answer_ids}
+        return_data = self.send_request(url, headers = self.base_header, data = payload, method = 'POST')
+        self.sleep()
+        if return_data['code'] != 200:
+            print(return_data['message'])
+            return
+        print(return_data['message'])
+
+    # ---------下面是精彩专区任务--------
+    def get_csrftoken(self):
+        url1 = 'https://event.ccbft.com/api/flow/nf/shortLink/redirect/ccb_gjb?CCB_Chnl=6000110'
+        url2 = 'https://fission-events.ccbft.com/a/224/kmenz5Zd?CCB_Chnl=6000110'
+        payload1 = '{{"appId":"wxd513efdbf26b5744","shortId":"jd9H3uCkzHaQBn8aeq5NWQ","archId":"ccb_gjb","channelId":"wx","ifWxFirst":false,"wxUUID":"{}"}}'.format(
+            self.wx_uuid)
+
+        headers = {
+            'Host': 'fission-events.ccbft.com',
+            'pragma': 'no-cache',
+            'cache-control': 'no-cache',
+            'upgrade-insecure-requests': '1',
+            'user-agent': app_ua,
+            'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9',
+            'x-requested-with': 'com.ccb.longjiLife',
+            'sec-fetch-site': 'same-site',
+            'sec-fetch-mode': 'navigate',
+            'sec-fetch-dest': 'document',
+            'referer': 'https://event.ccbft.com/',
+            'accept-encoding': 'gzip, deflate',
+            'accept-language': 'zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7',
+            'cookie': self.zq_cookie
+        }
+        return_data = requests.post(url1, headers = self.token_headers, data = payload1).json()
+        if return_data['code'] != 200:
+            return print(return_data['message'])
+
+        redirect_url = return_data['data'].get('redirectUrl')
+        requests.get(url = redirect_url, headers = headers)
+
+        try:
+            res = requests.get(url = url2, headers = headers)
+            data = res.text
+            csrf_token, authorization = self.extract_csrf_and_auth(data)
+
+            if csrf_token and authorization:
+                self.bus_headers['x-csrf-token'] = csrf_token
+                self.bus_headers['authorization'] = f'Bearer {authorization}'
+                self.sleep()
+
+                print('\n----代发专区----')
+                # self.game_id()
+                print('\n----养老专区----')
+                self.turn()
+                print('\n----跨境专区----')
+                self.border_draw()
+                print('\n----商户专区----')
+                self.shoplist()
+                print('\n----消保专区----\n---登山游戏----')
+                self.fire()
+                print('\n---抓娃娃游戏----')
+                self.get_doll()
+                print('\n---投篮球游戏----')
+                self.do_basket()
+            else:
+                print('CSRF token or Authorization not found.')
+        except requests.RequestException as e:
+            print(f"请求异常: {e}")
+
+    def extract_csrf_and_auth(self, data):
         csrf_token_pattern = r'<meta\s+name=csrf-token\s+content="([^"]+)">'
         authorization_pattern = r'<meta\s+name=Authorization\s+content="([^"]+)">'
-        csrf_token_match = re.search(csrf_token_pattern, response_text)
-        authorization_match = re.search(authorization_pattern, response_text)
+        csrf_token_match = re.search(csrf_token_pattern, data)
+        authorization_match = re.search(authorization_pattern, data)
         if csrf_token_match and authorization_match:
-            csrf_token, authorization = csrf_token_match.group(1), authorization_match.group(1)
-            if csrf_token and authorization:
-                self.Component_headers['x-csrf-token'] = csrf_token
-                self.Component_headers['authorization'] = f'Bearer {authorization}'
-                return True
-        return False
+            return csrf_token_match.group(1), authorization_match.group(1)
 
-    # 超级娃娃机
-    def ccb_draw_prize(self):
-        if not CCB_DRAW_PRIZE:
-            print("超级娃娃机已手动设置关闭！")
-            return
-        url = 'https://syx3.dmsp.ccb.com/Component/signup/status/224/xPOLkama'
-        response = self.session.get(url, headers=self.Component_headers)
-        response_dict = response.json()
-        # print(response_dict)
-        if response_dict.get('status') != 'success':
-            print(response_dict.get("message"))
-            return
-        url = 'https://fission-events.ccbft.com/Component/draw/getUserCCB/224/xPOLkama'
-        response = self.session.get(url, headers=self.Component_headers)
-        response_dict = response.json()
-        # print(response_dict)
-        draw_day_max_num = int(response_dict.get('data', {}).get('draw_day_max_num'))  # 抽奖总次数
-        user_day_draw_num = int(response_dict.get('data', {}).get('user_day_draw_num'))  # 抽奖已抽次数
-        print(f'剩余抽奖次数：{draw_day_max_num - user_day_draw_num}')
-        draw_day_num = draw_day_max_num - user_day_draw_num
-        if draw_day_num == 0:
-            return
-        for _ in range(draw_day_num):
-            time.sleep(5)
-            url = 'https://syx5.dmsp.ccb.com/Component/draw/dmspCommonCcbDrawPrize/224/xPOLkama'
-            _json = {}
-            response = self.session.post(url, headers=self.Component_headers, json=_json)
-            response_dict = response.json()
-            # print(response_dict)
-            if response_dict.get('status') == 'success':
-                print(f'获得{response_dict.get("data").get("prizename")}')
-                continue
-            print(response_dict.get("message"))
-            return
+        return None, None
 
-    # 街头投篮王
-    def shoot_basketball(self):
-        if not SHOOT_BASKETBALL:
-            return
-        url = 'https://fission-events.ccbft.com/activity/dmspdunk/user/224/eZgpye3y'
-        response = self.session.get(url, headers=self.Component_headers)
-        response_dict = response.json()
-        daily_times = response_dict.get('data', {}).get('remain_daily_times')
-        print(f'剩余游戏次数: {daily_times}')
-        for _ in range(daily_times):
-            url = 'https://fission-events.ccbft.com/activity/dmspdunk/start/224/eZgpye3y'
-            response = self.session.post(url, headers=self.Component_headers)
-            response_dict = response.json()
-            if response_dict.get('status') != 'success':
-                print(response_dict.get('message'))
-                return
-            game_id = response_dict.get('data', {}).get('id')
-            time.sleep(2)
-            got_ccb = 0
-            while True:
-                dogame_url = 'https://fission-events.ccbft.com/activity/dmspdunk/shot/224/eZgpye3y'
-                _json = {'id': game_id}
-                response = self.session.post(dogame_url, headers=self.Component_headers, json=_json)
-                response_dict = response.json()
-                if response_dict.get('code') == 1503:  # 次数不足
-                    print(f'游戏结束,获得cc豆数量: {got_ccb}')
-                    break
-                if response_dict.get('status') != 'success':
-                    print(response_dict.get('message'))
-                    time.sleep(1.5)
-                    continue
-                win_times = response_dict.get('data', {}).get('win_times')  # 投中数量
-                got_ccb = response_dict.get('data', {}).get('got_ccb')  # 获得cc豆
-                print(f'当前投中篮球数量: {win_times}')
-                time.sleep(1.5)
+    # 代发专区
 
-    # 福兔登山赛
-    def futu_mountain_climbing_race(self):
-        activity_id = 'jmXN4Q3d'
-        '''*****************************************助力相关*****************************************'''
-        global NEW_IDENT_DICT
-        url = f'https://syx15.dmsp.ccb.com/Component/signup/status/224/{activity_id}'
-        response = self.session.get(url, headers=self.Component_headers)
-        response_dict = response.json()
-        # print(response_dict)
-        if response_dict.get('status') == 'fail':
-            print(response_dict.get('message'))
-            return
-        ident = response_dict.get('data').get('ident')
-        NEW_IDENT_DICT.setdefault(activity_id, []).append(ident)
-        ident_list = IDENT_DICT.get(activity_id, [])
-        if len(ident_list) == len(CCB_CK_LIST):
-            u_ident_index = self.index + 1
-            if self.index == (len(CCB_CK_LIST) - 1):  # 如果这是最后一个账号
-                u_ident_index = 0
-            u_ident = ident_list[u_ident_index]
-            url = f'https://fission-events.ccbft.com/a/224/{activity_id}/index?u={u_ident}'
-            self.session.get(url, headers=self.Component_headers)
-        '''****************************************************************************************'''
-        num_url = 'https://fission-events.ccbft.com/activity/dmspxbmountain/getUserInfo/224/jmXN4Q3d'
-        response = self.session.get(num_url, headers=self.Component_headers)
-        response_dict = response.json()
-        if response_dict.get('status') != 'success':
-            print(response_dict.get('message'))
-            return
-        remain_num = response_dict['data'].get('remain_num', 0)
-        num = int(remain_num)
-        print(f'剩余游戏次数：{num}')
-        if num == 0:
-            return
-        for _ in range(num):
-            url = 'https://fission-events.ccbft.com/activity/dmspxbmountain/startChallenge/224/jmXN4Q3d'
-            _json = {}
-            response = self.session.post(url, headers=self.Component_headers, json=_json)
-            response_dict = response.json()
-            if response_dict.get('status') != 'success':
-                print(response_dict.get('message'))
-                return
-            game_id = response_dict.get('data')
-            print('开始登山游戏')
-            sleep_time = 20
-            print(f'等待{sleep_time}秒')
-            time.sleep(sleep_time)
-            url = 'https://fission-events.ccbft.com/activity/dmspxbmountain/doChallenge/224/jmXN4Q3d'
-            data = {"l_id": game_id, "stage": 13, "score": 200}
-            response = self.session.post(url, headers=self.Component_headers, json=data)
-            response_dict = response.json()
-            if response_dict.get('status') != 'success':
-                print(response_dict.get('message'))
-                return
-            draw_payload = {}
-            url = 'https://fission-events.ccbft.com/Component/draw/commonDrawPrize/224/jmXN4Q3d'
-            response = self.session.post(url, headers=self.Component_headers, json=draw_payload)
-            response_dict = response.json()
-            if response_dict.get('status') != 'success':
-                print(response_dict.get('message'))
-                return
-            prizename = response_dict.get('data', {}).get('prizename', '')
-            print(f'{response_dict.get("message")}  {prizename}')
-            time.sleep(5)
-
-    # 养老专区
-    # 养老健步行
-    def elderly_walking(self):
-        activity_id = '5P87Md3y'
-        '''*****************************************助力相关*****************************************'''
-        global NEW_IDENT_DICT
-        url = f'https://syx12.dmsp.ccb.com/Common/activity/getUserInfo/224/{activity_id}'
-        response = self.session.get(url, headers=self.Component_headers)
-        response_dict = response.json()
-        # print(response_dict)
-        if response_dict.get('status') == 'fail':
-            print(response_dict.get('message'))
-            return
-        ident = response_dict.get('data').get('ident')
-        NEW_IDENT_DICT.setdefault(activity_id, []).append(ident)
-        ident_list = IDENT_DICT.get(activity_id, [])
-        if len(ident_list) == len(CCB_CK_LIST):
-            u_ident_index = self.index + 1
-            if self.index == (len(CCB_CK_LIST) - 1):  # 如果这是最后一个账号
-                u_ident_index = 0
-            u_ident = ident_list[u_ident_index]
-            url = f'https://syx37.dmsp.ccb.com/a/224/5P87Md3y?u={u_ident}'
-            self.session.get(url, headers=self.Component_headers)
-        '''****************************************************************************************'''
+    # 养老专区新
+    def turn(self):
+        index_url = 'https://fission-events.ccbft.com/a/224/5P87Md3y/index?CCB_Chnl=2030005'
         tasklist_url = 'https://fission-events.ccbft.com/activity/dmspmileage/getindexdata/224/5P87Md3y'
         go_url = 'https://fission-events.ccbft.com/activity/dmspmileage/go/224/5P87Md3y'
-        response = self.session.get(tasklist_url, headers=self.Component_headers)
-        response_dict = response.json()
-        if response_dict['status'] != 'success':
-            return print(response_dict['message'])
-        task_list = response_dict.get('data', {}).get('acttask', {}).get('limit_time')
+
+        requests.get(url = index_url, headers = self.bus_headers)
+        tasks_data = self.send_request(tasklist_url, headers = self.bus_headers)
+
+        if tasks_data['status'] != 'success':
+            return print(tasks_data['message'])
+
+        task_list = tasks_data.get('data', {}).get('acttask', {}).get('limit_time')
+
         for task in task_list:
-            state = task.get('state')
-            title = task.get('title')
-            if state == 1:
-                print(f'已完成: {title}')
-                continue
             ident = task.get('ident')
+            title = task.get('title')
+            state = task.get('state')
             reward = task.get('reward')
-            print(f'去完成: {title}')
-            dotask_url = 'https://fission-events.ccbft.com/activity/dmspmileage/taskgo/224/5P87Md3y'
-            do_payload = {"type": "limit_time", "ident": ident}
-            response = self.session.post(dotask_url, headers=self.Component_headers, json=do_payload)
-            response_dict = response.json()
-            if response_dict['status'] != 'success':
-                return print(response_dict['message'])
-            print(f'浏览成功获得: {reward} 里程')
-            time.sleep(3)
-        response = self.session.get(tasklist_url, headers=self.Component_headers)
-        response_dict = response.json()
-        surplus = response_dict.get('data', {}).get('mileage').get('surplus')
+
+            if state == 1:
+                print(f'--已完成: {title}')
+            else:
+                print(f'---去完成: {title}')
+                dotask_url = 'https://fission-events.ccbft.com/activity/dmspmileage/taskgo/224/5P87Md3y'
+                do_payload = {"type": "limit_time", "ident": ident}
+                do_data = self.send_request(dotask_url, headers = self.bus_headers, data = do_payload, method = 'POST')
+
+                if do_data['status'] != 'success':
+                    return print(do_data['message'])
+                print(f'--浏览成功获得: {reward} 里程')
+                self.sleep()
+
+        self.sleep()
+        query_data = self.send_request(tasklist_url, headers = self.bus_headers)
+        surplus = query_data.get('data', {}).get('mileage').get('surplus')
+        rewards = query_data.get('data', {}).get('map', {}).get('config').get('node')
         if surplus != '0':
-            response = self.session.post(go_url, headers=self.Component_headers)
-            response_dict = response.json()
-            mileage_go = response_dict.get('data', {}).get('mileage_go', '')
-            user_node = response_dict.get('data', {}).get('user_node_value')
+            go_data = self.send_request(go_url, headers = self.bus_headers, method = 'POST')
+
+            mileage_go = go_data.get('data', {}).get('mileage_go', '')
+            user_node = go_data.get('data', {}).get('user_node_value')
             print(f'前进: {mileage_go}里程， 当前: {user_node}里程')
-            time.sleep(3)
-        time.sleep(1)
-        response = self.session.get(tasklist_url, headers=self.Component_headers)
-        response_dict = response.json()
-        rewards = response_dict.get('data', {}).get('map', {}).get('config').get('node')
+
         for reward in rewards:
             value = reward.get('value')
             state = reward.get('state')
             if value == 0 or state != 3:
                 continue
+
             getreward_url = 'https://fission-events.ccbft.com/activity/dmspmileage/draw/224/5P87Md3y'
             reward_payload = {"value": value}
-            response = self.session.post(getreward_url, headers=self.Component_headers, json=reward_payload)
-            response_dict = response.json()
-            if response_dict['status'] != 'success':
-                return print(response_dict['message'])
-            prizename = response_dict.get('data', {}).get('prizename')
+            rewrd_data = self.send_request(getreward_url, headers = self.bus_headers, data = reward_payload,
+                                           method = 'POST')
+            if rewrd_data['status'] != 'success':
+                return print(rewrd_data['message'])
+            prizename = rewrd_data.get('data', {}).get('prizename')
             print(f'领取 {value}里程奖励: {prizename}')
-            time.sleep(3)
 
-    # 跨境专区
-    # 闯关无国界 建行伴你海外行
-    def cross_borders(self):
-        activity_id = '1m0xM2mx'
-        '''*****************************************助力相关*****************************************'''
-        global NEW_IDENT_DICT
-        url = f'https://syx37.dmsp.ccb.com/Common/activity/getUserInfo/224/{activity_id}'
-        response = self.session.get(url, headers=self.Component_headers)
-        response_dict = response.json()
-        # print(response_dict)
-        if response_dict.get('status') == 'fail':
-            print(response_dict.get('message'))
+    # 跨境专区新
+    def border_draw(self):
+        index_url = 'https://fission-events.ccbft.com/a/224/1m0xM2mx/index?CCB_Chnl=6000117'
+        query_url = 'https://fission-events.ccbft.com/Component/draw/getUserExtInfo/224/1m0xM2mx'
+        draw_url = 'https://fission-events.ccbft.com/Component/draw/commonDrawPrize/224/1m0xM2mx'
+        requests.get(url = index_url, headers = self.bus_headers)
+        query_data = self.send_request(query_url, headers = self.bus_headers)
+        if query_data['status'] != 'success':
+            return print(query_data['message'])
+        remain = query_data['data'].get('remain_num')
+        if remain == '0':
+            return print('--当前剩余抽奖次数为0')
+        self.sleep()
+        draw_data = self.send_request(draw_url, headers = self.bus_headers, method = 'POST')
+        if draw_data['status'] != 'success':
+            print(draw_data['message'])
             return
-        ident = response_dict.get('data').get('ident')
-        NEW_IDENT_DICT.setdefault(activity_id, []).append(ident)
-        ident_list = IDENT_DICT.get(activity_id, [])
-        if len(ident_list) == len(CCB_CK_LIST):
-            u_ident_index = self.index + 1
-            if self.index == (len(CCB_CK_LIST) - 1):  # 如果这是最后一个账号
-                u_ident_index = 0
-            u_ident = ident_list[u_ident_index]
-            url = f'https://syx35.dmsp.ccb.com/a/224/1m0xM2mx?u={u_ident}'
-            self.session.get(url, headers=self.Component_headers)
-        '''****************************************************************************************'''
-        url = 'https://syx24.dmsp.ccb.com/activity/dmspkjdtcj/index/224/1m0xM2mx'
-        response = self.session.get(url, headers=self.Component_headers)
-        response_dict = response.json()
-        if response_dict.get('data').get('is_answer') == 0:  # 今天未答题
-            time.sleep(2)
-            print('开始答题！')
-            url = 'https://syx24.dmsp.ccb.com/Component/answer/getLevels/224/1m0xM2mx'
-            response = self.session.get(url, headers=self.Component_headers)
-            response_dict = response.json()
-            level = response_dict.get('data').get('list')[0].get('level')  # 获取关卡id
-            url = 'https://syx24.dmsp.ccb.com/Component/answer/getQuestions/224/1m0xM2mx'
-            _json = {"id": level}
-            response = self.session.post(url, headers=self.Component_headers, json=_json)
-            response_dict = response.json()
-            # print(response_dict)
-            question_name = response_dict.get('data')[0].get('title')
-            answer_list = response_dict.get('data')[0].get('options')
-            question_id = response_dict.get('data')[0].get('questionId')
-            answer_str = ''
-            for answer in answer_list:
-                answer_str += f"{answer.get('id')} {answer.get('option')}\n"
-            response_text = chatgpt_answer_question(question_name, answer_str)
-            print(response_text)
-            for answer in answer_list:
-                if str(answer.get('id')) in response_text:
-                    _json = {"id": question_id, "options": str(answer.get('id')), "levelId": level}
-                    break
-            else:
-                print(f'使用chatgpt回答问题失败！chatgpt：{response_text}')
-                print('开始随机选择！')
-                _json = {"id": question_id, "options": str(random.choice(answer_list).get('id')), "levelId": level}
-            time.sleep(5)
-            url = "https://syx24.dmsp.ccb.com/Component/answer/do/224/1m0xM2mx"
-            self.session.post(url, headers=self.Component_headers, json=_json)
-            time.sleep(2)
-        url = 'https://fission-events.ccbft.com/Component/draw/getUserExtInfo/224/1m0xM2mx'
-        response = self.session.get(url, headers=self.Component_headers)
-        response_dict = response.json()
-        if response_dict['status'] != 'success':
-            return print(response_dict['message'])
-        remain = int(response_dict['data'].get('remain_num'))
-        print(f'剩余抽奖次数：{remain}')
-        if remain == 0:
-            return
-        print('开始抽奖')
-        for _ in range(remain):
-            url = "https://fission-events.ccbft.com/Component/draw/commonDrawPrize/224/1m0xM2mx"
-            response = self.session.post(url, headers=self.Component_headers)
-            response_dict = response.json()
-            if response_dict.get('status') == 'success':
-                print(f'获得{response_dict.get("data").get("prizename")}')
-                time.sleep(3)
-                continue
-            print(response_dict.get('message'))
-            break
+        print(f"--{draw_data['message']}---{draw_data['data'].get('prizename')}")
 
-    # 商户专区
-    # 享建行商户服务 天天抽取CC豆
-    def merchant_zone(self):
-        url = 'https://fission-events.ccbft.com/a/224/8ZWXBM3w/index?CCB_Chnl=6000115'
-        self.session.get(url, headers=self.Component_headers)  # 完成每日登录
-
-        url = 'https://fission-events.ccbft.com/Component/task/lists/224/8ZWXBM3w'
-        response = self.session.get(url, headers=self.Component_headers)
-        response_dict = response.json()
-        if response_dict['status'] != 'success':
-            print(response_dict['message'])
+    # 商户专区新
+    def shoplist(self):
+        index_url = 'https://fission-events.ccbft.com/a/224/8ZWXBM3w/index?CCB_Chnl=6000115'
+        task_url = 'https://fission-events.ccbft.com/Component/task/lists/224/8ZWXBM3w'
+        requests.get(url = index_url, headers = self.bus_headers)
+        tasks_data = self.send_request(task_url, headers = self.bus_headers)
+        self.sleep()
+        if tasks_data['status'] != 'success':
+            print(tasks_data['message'])
             return
-        task_list = response_dict['data'].get('userTask')
+        task_list = tasks_data['data'].get('userTask')
         for value in task_list:
             complete_status = value['finish']
             if complete_status == 1:
+                print('--已完成该任务，继续浏览下一个任务')
                 continue
             task_id = value['id']
             do_url = 'https://fission-events.ccbft.com/Component/task/do/224/8ZWXBM3w'
             payload = {"id": task_id}
-            response = self.session.post(do_url, headers=self.Component_headers, json=payload)
-            response_dict = response.json()
-            if response_dict['status'] != 'success':
-                print(response_dict['message'])
+            do_data = self.send_request(do_url, headers = self.bus_headers, data = payload, method = 'POST')
+            if do_data['status'] != 'success':
+                print(do_data['message'])
                 return
-            print('浏览完成')
+            print('--浏览完成')
             time.sleep(3)
-        self.merchant_zone_lottery()
 
-    # 商户专区
-    # 享建行商户服务 天天抽取CC豆 抽奖
-    def merchant_zone_lottery(self):
+        print('--已完成全部任务，去掷骰子')
+        time.sleep(3)
+        self.throw()
+
+    def throw(self):
         query_url = 'https://fission-events.ccbft.com/activity/dmspshzq/getIndex/224/8ZWXBM3w'
-        response = self.session.get(query_url, headers=self.Component_headers)
-        response_dict = response.json()
-        if response_dict['status'] != 'success':
-            print(response_dict['message'])
+        query_data = self.send_request(query_url, headers = self.bus_headers)
+        if query_data['status'] != 'success':
+            print(query_data['message'])
             return
-        remain_num = response_dict['data'].get('remain_num')
-        print(f'摇骰子机会次数：{remain_num}')
+        remain_num = query_data['data'].get('remain_num')
         if remain_num == '0':
-            return
+            return print('当前没有骰子了')
+        self.sleep()
         num = int(remain_num)
+        draw_url = 'https://fission-events.ccbft.com/activity/dmspshzq/drawPrize/224/8ZWXBM3w'
+        payload = {}
+        prizes = []
         for _ in range(num):
-            draw_url = 'https://fission-events.ccbft.com/activity/dmspshzq/drawPrize/224/8ZWXBM3w'
-            payload = {}
-            response = self.session.post(draw_url, headers=self.Component_headers, json=payload)
-            response_dict = response.json()
-            if response_dict['status'] != 'success':
-                print(response_dict['message'])
+            draw_data = self.send_request(draw_url, headers = self.bus_headers, data = payload, method = 'POST')
+            if draw_data['status'] != 'success':
+                print(draw_data['message'])
                 return
-            add_step = response_dict['data'].get('add_step')
-            current_step = response_dict['data'].get('current_step')
-            prize_name = response_dict['data'].get('prize_name')
-            print(f"前进步数:{add_step},当前步数:{current_step} 获得奖励:{prize_name}")
+            add_step = draw_data['data'].get('add_step')
+            current_step = draw_data['data'].get('current_step')
+            prize_name = draw_data['data'].get('prize_name')
+            prizes.append(f"前进步数:{add_step},当前步数:{current_step}\n获得奖励:{prize_name}")
             time.sleep(3)
 
-    # 获取CC豆过期信息
-    def get_expiration_information(self):
-        url = 'https://m3.dmsp.ccb.com/api/businessCenter/user/getUserCCDExpired'
-        _json = {}
-        response = self.session.post(url, headers=self.businessCenter_headers, json=_json)
-        response_dict = response.json()
-        expire_date = response_dict.get('data').get('userCCBeanExpiredInfo').get('expireDate')
-        count = response_dict.get('data').get('userCCBeanExpiredInfo').get('count')
-        if count:
-            print(f'将于{expire_date.split("T")[0]}过期{count}CC豆')
+        if prizes:
+            print('\n'.join(prizes))
 
-    # 消保知识大考验
-    def consumer_protection_knowledge_test(self):
-        activity_id = 'A3w4DaPj'
-        '''*****************************************助力相关*****************************************'''
-        global NEW_IDENT_DICT
-        url = f'https://syx24.dmsp.ccb.com/Common/activity/getUserInfo/224/{activity_id}'
-        response = self.session.get(url, headers=self.Component_headers)
-        response_dict = response.json()
-        # print(response_dict)
-        if response_dict.get('status') == 'fail':
-            print(response_dict.get('message'))
+    # 消保专区新
+    def fire(self):
+        num_url = 'https://fission-events.ccbft.com/activity/dmspxbmountain/getUserInfo/224/jmXN4Q3d'
+        num_data = self.send_request(num_url, headers = self.bus_headers)
+        self.sleep()
+        if num_data.get('status') != 'success':
+            print(num_data.get('message'))
             return
-        ident = response_dict.get('data').get('ident')
-        NEW_IDENT_DICT.setdefault(activity_id, []).append(ident)
-        ident_list = IDENT_DICT.get(activity_id, [])
-        if len(ident_list) == len(CCB_CK_LIST):
-            u_ident_index = self.index + 1
-            if self.index == (len(CCB_CK_LIST) - 1):  # 如果这是最后一个账号
-                u_ident_index = 0
-            u_ident = ident_list[u_ident_index]
-            url = f'https://syx24.dmsp.ccb.com/a/224/A3w4DaPj?u={u_ident}'
-            self.session.get(url, headers=self.Component_headers)
-        '''****************************************************************************************'''
-        url = "https://syx36.dmsp.ccb.com/Component/answer/getLevels/224/A3w4DaPj"
-        response = self.session.get(url, headers=self.Component_headers)
-        response_dict = response.json()
-        # print(response_dict)
-        answer_num = int(response_dict.get('data').get('answer_num'))
-        print(f'答题机会次数：{answer_num}')
-        for _ in range(answer_num):
-            level_id = "n1m0V3xY"  # 问题等级，当前青铜
-            url = "https://syx16.dmsp.ccb.com/Component/answer/getQuestions/224/A3w4DaPj"
-            _json = {"id": level_id}
-            response = self.session.post(url, headers=self.Component_headers, json=_json)
-            response_dict = response.json()
-            # print(response_dict)
-            question_id = response_dict.get('data')[0].get('questionId')
-            question_name = response_dict.get('data')[0].get('title')
-            answer_list = response_dict.get('data')[0].get('options')
-            answer_str = ''
-            for answer in answer_list:
-                answer_str += f"{answer.get('id')} {answer.get('option')}\n"
-            print('第一题')
-            response_text = chatgpt_answer_question(question_name, answer_str, '消费者权益保护知识考验')
-            print(response_text)
-            for answer in answer_list:
-                if str(answer.get('id')) in response_text:
-                    _json = {"id": question_id, "levelId": level_id, "options": str(answer.get('id'))}
-                    break
-            else:
-                print(f'使用chatgpt回答问题失败！chatgpt：{response_text}')
-                print('开始随机选择！')
-                _json = {"id": question_id, "levelId": level_id, "options": str(random.choice(answer_list).get('id'))}
-            # 回答第一题
-            time.sleep(5)
-            url = "https://syx16.dmsp.ccb.com/Component/answer/do/224/A3w4DaPj"
-            response = self.session.post(url, headers=self.Component_headers, json=_json)
-            response_dict = response.json()
-            question_id = response_dict.get('data').get('next').get('questionId')
-            question_name = response_dict.get('data').get('next').get('title')
-            answer_list = response_dict.get('data').get('next').get('options')
-            answer_str = ''
-            for answer in answer_list:
-                answer_str += f"{answer.get('id')} {answer.get('option')}\n"
-            print('第二题')
-            response_text = chatgpt_answer_question(question_name, answer_str, '消费者权益保护知识考验')
-            print(response_text)
-            for answer in answer_list:
-                if str(answer.get('id')) in response_text:
-                    _json = {"id": question_id, "levelId": level_id, "options": str(answer.get('id'))}
-                    break
-            else:
-                print(f'使用chatgpt回答问题失败！chatgpt：{response_text}')
-                print('开始随机选择！')
-                _json = {"id": question_id, "levelId": level_id, "options": str(random.choice(answer_list).get('id'))}
-            # 回答第二题
-            time.sleep(5)
-            url = "https://syx16.dmsp.ccb.com/Component/answer/do/224/A3w4DaPj"
-            response = self.session.post(url, headers=self.Component_headers, json=_json)
-            response_dict = response.json()
-            question_id = response_dict.get('data').get('next').get('questionId')
-            question_name = response_dict.get('data').get('next').get('title')
-            answer_list = response_dict.get('data').get('next').get('options')
-            answer_str = ''
-            for answer in answer_list:
-                answer_str += f"{answer.get('id')} {answer.get('option')}\n"
-            print('第三题')
-            response_text = chatgpt_answer_question(question_name, answer_str, '消费者权益保护知识考验')
-            print(response_text)
-            for answer in answer_list:
-                if str(answer.get('id')) in response_text:
-                    _json = {"id": question_id, "levelId": level_id, "options": str(answer.get('id'))}
-                    break
-            else:
-                print(f'使用chatgpt回答问题失败！chatgpt：{response_text}')
-                print('开始随机选择！')
-                _json = {"id": question_id, "levelId": level_id, "options": str(random.choice(answer_list).get('id'))}
-            # 回答第三题
-            time.sleep(5)
-            url = "https://syx16.dmsp.ccb.com/Component/answer/do/224/A3w4DaPj"
-            self.session.post(url, headers=self.Component_headers, json=_json)
-            time.sleep(2)
-            # 获取答题结果
-            url = "https://syx16.dmsp.ccb.com/Component/answer/getResult/224/A3w4DaPj"
-            _json = {"id": level_id}
-            response = self.session.post(url, headers=self.Component_headers, json=_json)
-            response_dict = response.json()
-            print(f'结果 {response_dict}')
-            time.sleep(5)
-        url = "https://syx24.dmsp.ccb.com/Component/draw/getUserExtInfo/224/A3w4DaPj"
-        response = self.session.get(url, headers=self.Component_headers)
-        response_dict = response.json()
-        remain_num = int(response_dict.get('data').get('remain_num'))
-        print(f'剩余抽奖次数：{remain_num}')
-        if remain_num == 0:
+        remain_num = num_data['data'].get('remain_num', 0)
+        num = int(remain_num)
+        if num == 0:
+            print('当前剩余游戏次数为0')
             return
-        print('开始抽奖')
-        for _ in range(remain_num):
-            url = "https://syx24.dmsp.ccb.com/Component/draw/commonDrawPrize/224/A3w4DaPj"
-            _json = {}
-            response = self.session.post(url, headers=self.Component_headers, json=_json)
-            response_dict = response.json()
-            if response_dict.get('status') == 'success':
-                print(f'获得{response_dict.get("data").get("prizename")}')
-                time.sleep(3)
-                continue
-            print(response_dict.get('message'))
-            break
+        id_url = 'https://fission-events.ccbft.com/activity/dmspxbmountain/startChallenge/224/jmXN4Q3d'
+        draw_url = 'https://fission-events.ccbft.com/Component/draw/commonDrawPrize/224/jmXN4Q3d'
+        payload = {}
+        for _ in range(num):
+            id_data = self.send_request(id_url, headers = self.bus_headers, data = payload, method = 'POST')
+            if id_data.get('status') != 'success':
+                print(id_data.get('message'))
+                return
+            game_id = id_data.get('data')
+            print('获取成功，开始登山游戏')
+            time.sleep(20)
+            game_url = 'https://fission-events.ccbft.com/activity/dmspxbmountain/doChallenge/224/jmXN4Q3d'
+            payload_game = {"l_id": game_id, "stage": 13, "score": 200}
+            msg_data = self.send_request(game_url, headers = self.bus_headers, data = payload_game,
+                                         method = 'POST')
+            if msg_data.get('status') != 'success':
+                print(msg_data.get('message'))
+                return
+            draw_payload = {}
+            draw_data = self.send_request(draw_url, headers = self.bus_headers, data = draw_payload,
+                                          method = 'POST')
+            if draw_data.get('status') != 'success':
+                print(draw_data.get('message'))
+                return
+            mes = draw_data.get('message')
+            prizename = draw_data.get('data', {}).get('prizename', '')
+            print(f'{mes}  {prizename}')
+            time.sleep(5)
 
-    # 和我一起来闯关，答题函数
-    def come_with_me_to_break_through_answer_question(self, bout_id, level_id, index):
-        url = "https://syx38.dmsp.ccb.com/activity/dmspxbnnanswer/getQuestion/224/kZMpyxmW"
-        params = {"boutId": bout_id, "levelId": level_id, "questionNo": str(index + 1)}
-        response = self.session.get(url, params=params, headers=self.businessCenter_headers)
-        response_dict = response.json()
-        if response_dict.get('status') != 'success':
-            return False
-        # print(response_dict)
-        question_name = response_dict.get('data').get('title')
-        answer_list = response_dict.get('data').get('options')
-        answer_str = ''
-        for answer in answer_list:
-            answer_str += f"{answer.get('id')} {answer.get('title')}\n"
-        response_text = chatgpt_answer_question(question_name, answer_str, '生活安全知识问答，请以安全为主')
-        print(response_text)
-        for answer in answer_list:
-            if str(answer.get('id')) in response_text:
-                _json = {"levelId": level_id, "questionNo": str(index + 1), "answer": str(answer.get('id')),
-                         "boutId": bout_id}
+    # 抓娃娃
+    def get_doll(self):
+        if doll_flag == 0:
+            print('已关闭抓娃娃游戏')
+            return
+        query_url = 'https://fission-events.ccbft.com/Component/draw/getUserCCB/224/xPOLkama'
+        draw_url = 'https://fission-events.ccbft.com/Component/draw/dmspCommonCcbDrawPrize/224/xPOLkama'
+
+        query_data = self.send_request(query_url, headers = self.bus_headers)
+        draw_num = query_data.get('data', {}).get('user_day_draw_num', 0)
+        num = 10 - int(draw_num)
+        num2 = 10 - doll_draw
+        print(f'--当前剩余游戏次数: {num}')
+
+        while num > num2:
+            draw_payload = {}
+            draw_data = self.send_request(draw_url, headers = self.bus_headers, data = draw_payload, method = 'POST')
+            if draw_data.get('status') != 'success':
+                print(draw_data.get('message'))
                 break
-        else:
-            print(f'使用chatgpt回答问题失败！chatgpt：{response_text}')
-            print('开始随机选择！')
-            _json = {"levelId": level_id, "questionNo": str(index + 1),
-                     "answer": str(random.choice(answer_list).get('id')), "boutId": bout_id}
-        time.sleep(5)
-        url = "https://syx38.dmsp.ccb.com/activity/dmspxbnnanswer/submitAnswer/224/kZMpyxmW"
-        response = self.session.post(url, headers=self.Component_headers, json=_json)
-        response_dict = response.json()
-        print(response_dict.get('message'))
-        return True
+            msg = draw_data.get('message')
+            prizename = draw_data.get('data', {}).get('prizename', '')
+            print(f'{msg}  {prizename}')
+            time.sleep(5)
+            num -= 1
 
-    # 和我一起来闯关
-    def come_with_me_to_break_through(self):
-        activity_id = 'kZMpyxmW'
-        '''*****************************************助力相关*****************************************'''
-        global NEW_IDENT_DICT
-        url = f'https://syx28.dmsp.ccb.com/Common/activity/getUserInfo/224/{activity_id}'
-        response = self.session.get(url, headers=self.Component_headers)
-        response_dict = response.json()
-        # print(response_dict)
-        if response_dict.get('status') == 'fail':
-            print(response_dict.get('message'))
+    # 投篮球
+    def do_basket(self):
+        if basket_flag == 0:
+            print('已关闭投篮球游戏')
             return
-        ident = response_dict.get('data').get('ident')
-        NEW_IDENT_DICT.setdefault(activity_id, []).append(ident)
-        ident_list = IDENT_DICT.get(activity_id, [])
-        if len(ident_list) == len(CCB_CK_LIST):
-            u_ident_index = self.index + 1
-            if self.index == (len(CCB_CK_LIST) - 1):  # 如果这是最后一个账号
-                u_ident_index = 0
-            u_ident = ident_list[u_ident_index]
-            url = f'https://syx3.dmsp.ccb.com/a/224/kZMpyxmW/index?u={u_ident}'
-            self.session.get(url, headers=self.Component_headers)
-        '''****************************************************************************************'''
-        url = "https://syx28.dmsp.ccb.com/activity/dmspxbnnanswer/getChance/224/kZMpyxmW"
-        response = self.session.get(url, headers=self.Component_headers)
-        response_dict = response.json()
-        remain = int(response_dict.get('data').get('remain'))
-        print(f'剩余挑战次数：{remain}')
-        _signal = True
-        while remain > 0 and _signal:
-            url = 'https://syx15.dmsp.ccb.com/activity/dmspxbnnanswer/levelList/224/kZMpyxmW'
-            response = self.session.get(url, headers=self.businessCenter_headers)
-            response_dict = response.json()
-            # print(response_dict)
-            level_list = response_dict.get('data')
-            for level in level_list:
-                if level.get('status') != 3:  # 1为已完成，3为可闯关，4为不可闯关
+        index_url = 'https://fission-events.ccbft.com/a/224/eZgpye3y/index?CCB_Chnl=1000181'
+        query_url = 'https://fission-events.ccbft.com/activity/dmspdunk/user/224/eZgpye3y'
+        requests.get(url = index_url, headers = self.bus_headers)
+        query_data = self.send_request(query_url, headers = self.bus_headers)
+        remain_daily = query_data.get('data', {}).get('remain_daily_times')
+        num = 5 - basket_draw
+        print(f'--当前剩余游戏次数: {remain_daily}')
+        self.sleep()
+
+        while remain_daily > num:
+            id_url = 'https://fission-events.ccbft.com/activity/dmspdunk/start/224/eZgpye3y'
+            id_data = self.send_request(id_url, headers = self.bus_headers, method = 'POST')
+
+            if id_data.get('status') != 'success':
+                print(id_data.get('message'))
+                break
+            game_id = id_data.get('data', {}).get('id')
+            time.sleep(5)
+            activity_url = f'https://fission-events.ccbft.com/activity/dmspdunk/scene/224/eZgpye3y?id={game_id}'
+            activity_data = self.send_request(activity_url, headers = self.bus_headers)
+            remain_times = activity_data.get('data', {}).get('remain_times')
+            basket_num = int(remain_times)  # 篮球数量
+            while basket_num > 0:
+                dogame_url = 'https://fission-events.ccbft.com/activity/dmspdunk/shot/224/eZgpye3y'
+                payload = {'id': game_id}
+                dogeme_data = self.send_request(dogame_url, headers = self.bus_headers, data = payload, method = 'POST')
+                if dogeme_data.get('status') != 'success':
+                    print(dogeme_data.get('message'))
                     continue
-                print(f'开始{level.get("name")}')
-                bout_id = level.get('bout')
-                level_id = level.get('mark')
-                for index in range(3):
-                    if not self.come_with_me_to_break_through_answer_question(bout_id, level_id, index):
-                        print('可能没有闯关机会了！')
-                        _signal = False
-                        break
-                    time.sleep(3)
-                break
+                win_times = dogeme_data.get('data', {}).get('win_times')  # 投中数量
+                got_ccb = dogeme_data.get('data', {}).get('got_ccb')  # 获得cc豆
+                print(f'当前投中篮球数量: {win_times}')
+
+                if basket_num == 1:
+                    print(f'游戏结束,获得cc豆数量: {got_ccb}')
+                time.sleep(2.5)
+                basket_num -= 1
+            remain_daily -= 1
+
+    # 查询cc豆及过期cc豆时间
+    def get_user_ccd(self):
+        url_get_ccd = f'https://m3.dmsp.ccb.com/api/businessCenter/user/getUserCCD?zhc_token={self.zhc_token}'
+        url_get_expired_ccd = f'https://m3.dmsp.ccb.com/api/businessCenter/user/getUserCCDExpired?zhc_token={self.zhc_token}'
+
+        try:
+            return_data1 = self.send_request(url_get_ccd, headers = self.base_header, data = {},
+                                             method = 'POST')
+            self.sleep()
+            return_data2 = self.send_request(url_get_expired_ccd, headers = self.base_header,
+                                             data = {}, method = 'POST')
+            if return_data1['code'] != 200:
+                raise Exception(return_data1['message'])
+            elif return_data2['code'] != 200:
+                raise Exception(return_data2['message'])
+            count1 = return_data1['data'].get('userCCBeanInfo').get('count')
+            count2 = return_data2['data'].get('userCCBeanExpiredInfo').get('count')
+            expire_date_str = return_data2['data'].get('userCCBeanExpiredInfo').get('expireDate')
+            if expire_date_str:
+                expire_date = datetime.fromisoformat(expire_date_str)
+                formatted_date = expire_date.strftime('%Y-%m-%d %H:%M:%S')
+                print(f'\n当前cc豆:{count1}，有{count2} cc豆将于{formatted_date}过期')
             else:
-                break
-        url = "https://syx3.dmsp.ccb.com/Component/draw/getUserExtInfo/224/kZMpyxmW"
-        response = self.session.get(url, headers=self.Component_headers)
-        response_dict = response.json()
-        remain_num = int(response_dict.get('data').get('remain_num'))
-        print(f'剩余抽奖次数：{remain_num}')
-        if remain_num == 0:
-            return
-        print('开始抽奖')
-        while True:
-            url = 'https://syx3.dmsp.ccb.com/Component/draw/commonDrawPrize/224/kZMpyxmW'
-            _json = {}
-            response = self.session.post(url, headers=self.Component_headers, json=_json)
-            response_dict = response.json()
-            if response_dict.get('status') == 'success':
-                print(f'获得{response_dict.get("data").get("prizename")}')
-                time.sleep(3)
-                continue
-            break
+                print("expire_date_str is empty")
 
-    # 拼图大作战
-    def jigsaw_puzzle(self):
-        activity_id = '4379wEmy'
-        '''*****************************************助力相关*****************************************'''
-        global NEW_IDENT_DICT
-        url = f'https://syx35.dmsp.ccb.com/Common/activity/getUserInfo/224/{activity_id}'
-        response = self.session.get(url, headers=self.Component_headers)
-        response_dict = response.json()
-        # print(response_dict)
-        if response_dict.get('status') == 'fail':
-            print(response_dict.get('message'))
-            return
-        ident = response_dict.get('data').get('ident')
-        NEW_IDENT_DICT.setdefault(activity_id, []).append(ident)
-        ident_list = IDENT_DICT.get(activity_id, [])
-        if len(ident_list) == len(CCB_CK_LIST):
-            u_ident_index = self.index + 1
-            if self.index == (len(CCB_CK_LIST) - 1):  # 如果这是最后一个账号
-                u_ident_index = 0
-            u_ident = ident_list[u_ident_index]
-            url = f'https://syx19.dmsp.ccb.com/a/224/4379wEmy?u={u_ident}'
-            self.session.get(url, headers=self.Component_headers)
-        '''****************************************************************************************'''
-        url = "https://syx1.dmsp.ccb.com/activity/dmspjigsaw/userData/224/4379wEmy"
-        response = self.session.get(url, headers=self.Component_headers)
-        response_dict = response.json()
-        remain_num = int(response_dict.get('data').get('remain_num'))
-        print(f'剩余挑战次数：{remain_num}')
-        for _ in range(remain_num):
-            print('开始拼图！')
-            url = "https://syx35.dmsp.ccb.com/activity/dmspjigsaw/jigsawStart/224/4379wEmy"
-            self.session.post(url, headers=self.Component_headers)
-            time.sleep(3)
-            url = "https://syx35.dmsp.ccb.com/activity/dmspjigsaw/getJigsawImgs/224/4379wEmy"
-            response = self.session.post(url, headers=self.Component_headers)
-            response_dict = response.json()
-            # print(response_dict)
-            if response_dict.get('status') != 'success':
-                return
-            sort_str = identify_sort(response_dict)
-            # print(sort_str)
-            time.sleep(10)
-            url = 'https://syx35.dmsp.ccb.com/activity/dmspjigsaw/checkJigsaw/224/4379wEmy'
-            _json = {"sort": sort_str}
-            response = self.session.post(url, headers=self.Component_headers, json=_json)
-            response_dict = response.json()
-            print(f'拼图完成 {response_dict}')
-            time.sleep(3)
-        url = "https://syx1.dmsp.ccb.com/activity/dmspjigsaw/userData/224/4379wEmy"
-        response = self.session.get(url, headers=self.Component_headers)
-        response_dict = response.json()
-        draw_remain_num = int(response_dict.get('data').get('draw_remain_num'))
-        print(f'剩余抽奖次数：{draw_remain_num}')
-        if draw_remain_num == 0:
-            return
-        while True:
-            url = 'https://syx19.dmsp.ccb.com/Component/draw/commonDrawPrize/224/4379wEmy'
-            response = self.session.post(url, headers=self.Component_headers)
-            response_dict = response.json()
-            if response_dict.get('status') == 'success':
-                print(f'获得{response_dict.get("data").get("prizename")}')
-                time.sleep(3)
-                continue
-            break
-
-    # # 统计今日CC豆收支
-    # def statistics_ccb_today(self):
-    #     url = 'https://cy.cloud.ccb.com/gateway/user-server/user/promised/getCCBeanDetails'
-    #     headers = self.Component_headers | {'Content-Type': 'application/x-www-form-urlencoded'}
-    #     print(headers)
-    #     data = 'pageNum=1&pageSize=10&type=01&queryMonth=202308'
-    #     response = requests.post(url, headers=headers, data=data)
-    #     response_dict = response.json()
-    #     print(response_dict)
-
-    def main(self):
-        character = '★★'
-        if not self.sign_in():
-            return
-        self.get_user()  # 获取用户信息
-        print(f'{character}开始激活勋章')
-        self.activation_medal()
-        print(f'{character}开始签到')
-        self.check_in()  # 签到
-        print(f'{character}开始完成浏览任务')
-        self.execute_task()
-        print(f'{character}开始领取每日营收')
-        self.receive_daily_earnings()
-        print(f'{character}开始每日答题')
-        self.daily_answer_question()
-        print(f'{character}开始超级娃娃机抓娃娃')
-        self.ccb_draw_prize()
-        print(f'{character}开始街头投篮王')
-        self.shoot_basketball()
-        # 消保专区
-        print(f'{character}开始福兔登山赛')
-        self.futu_mountain_climbing_race()
-        print(f'{character}开始拼图大作战')
-        self.jigsaw_puzzle()
-        print(f'{character}开始和我一起来闯关')
-        self.come_with_me_to_break_through()
-        print(f'{character}开始消保知识大考验')
-        self.consumer_protection_knowledge_test()
-        # 养老专区
-        print(f'{character}开始养老健步行')
-        self.elderly_walking()
-        # 跨境专区
-        print(f'{character}开始闯关无国界 建行伴你海外行')
-        self.cross_borders()
-        # 商户专区
-        print(f'{character}开始享建行商户服务 天天抽取CC豆')
-        self.merchant_zone()
-        print(f'{character}开始升级每日营收等级')
-        self.upgrade_daily_earnings_level()
-        self.get_expiration_information()  # 获取CC豆过期信息
-        self.get_user()  # 获取用户信息
+        except Exception as e:
+            print(str(e))
 
 
-# 主程序
-def main(ck_list):
-    global IDENT_DICT
-    if not ck_list:
-        print('没有获取到账号！')
-        return
-    try:
-        with open("ident_dict.json", "r", encoding="utf-8") as f:  # 打开 JSON 文件，以 UTF-8 编码方式打开
-            IDENT_DICT = json.load(f)  # 使用 json.load() 方法将文件内容加载为 Python 对象
-    except FileNotFoundError:  # 如果文件不存在
-        IDENT_DICT = {}
-    ck_list = [ck for ck in ck_list if ck]
-    print(f'获取到{len(ck_list)}个账号！')
-    for index, ck in enumerate(ck_list):
-        print(f'*****第{index + 1}个账号*****')
-        CCBLife(ck, index).main()
-        print('')
-    with open("ident_dict.json", "w", encoding="utf-8") as f:
-        json.dump(NEW_IDENT_DICT, f)
+if __name__ == "__main__":
+    cookies = user_cookie.split("@")
+    msg = f"建行cc豆共获取到{len(cookies)}个账号"
+    print(msg)
 
-
-if __name__ == '__main__':
-    main(CCB_CK_LIST)
-    sys.exit()
+    for i, cookie in enumerate(cookies, start = 1):
+        print(f"\n======== ▷ 第 {i} 个账号 ◁ ========")
+        CCD(cookie).run()
+        print("\n随机等待5-10s进行下一个账号")
+        time.sleep(random.randint(5, 10))
