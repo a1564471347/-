@@ -28,3 +28,7 @@ jobs:
       env:
         chinaUnicomCookie: ${{ secrets.CHINAU_COOKIE }} # 读取你在设置里存的 Cookie
       run: python chinaUnicom.py
+          - name: 推送 Bark 通知
+      if: always() # 无论成功还是失败都发送
+      run: |
+        curl -L "https://api.day.app/${{ secrets.BARK_KEY }}/联通脚本执行完毕/任务状态见日志"
