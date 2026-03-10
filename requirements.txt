@@ -1,2 +1,6 @@
 requests
 Crypto
+pycryptodome
+httpx
+dotenv
+pycryptodomex
