@@ -1,0 +1,30 @@
+name: Run Python Script
+
+on:
+  push:
+    branches: [ main ]  # 当你推送代码到 main 分支时运行
+  schedule:
+    - cron: '0 0 * * *' # 每天凌晨 12:00 (UTC时间) 自动运行，可自行修改
+  workflow_dispatch:     # 允许你手动点击按钮运行
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: 检出代码
+      uses: actions/checkout@v3
+
+    - name: 安装 Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+
+    - name: 安装依赖
+      run: |
+        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+    - name: 运行脚本
+      env:
+        chinaUnicomCookie: ${{ secrets.CHINAU_COOKIE }} # 读取你在设置里存的 Cookie
+      run: python chinaUnicom.py
