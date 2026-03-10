@@ -2,10 +2,10 @@ name: Run Python Script
 
 on:
   push:
-    branches: [ main ]  # 当你推送代码到 main 分支时运行
+    branches: [ main ]
   schedule:
-    - cron: '0 8 * * *' # 每天凌晨 12:00 (UTC时间) 自动运行，可自行修改
-  workflow_dispatch:     # 允许你手动点击按钮运行
+    - cron: '0 0 * * *' # UTC 0:00 等于北京时间早上 8:00
+  workflow_dispatch:
 
 jobs:
   build:
@@ -26,9 +26,10 @@ jobs:
 
     - name: 运行脚本
       env:
-        chinaUnicomCookie: ${{ secrets.CHINAU_COOKIE }} # 读取你在设置里存的 Cookie
+        chinaUnicomCookie: ${{ secrets.CHINAU_COOKIE }}
       run: python chinaUnicom.py
-          - name: 推送 Bark 通知
-      if: always() # 无论成功还是失败都发送
+
+    - name: 推送 Bark 通知
+      if: always() # 确保脚本运行完（无论成功失败）都会发通知
       run: |
         curl -L "https://api.day.app/${{ secrets.BARK_KEY }}/联通脚本执行完毕/任务状态见日志"
