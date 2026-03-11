@@ -4,4 +4,3 @@ pycryptodome
 httpx
 dotenv
 pycryptodomex
-notify
