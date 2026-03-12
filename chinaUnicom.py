@@ -88,13 +88,13 @@ globalConfig = {
     # --- 1. 功能总开关 (True=开启, False=关闭) ---
     "enable_sign": True,          # 首页签到 (🔺总开关, 含签到/任务/抢话费券)
     "enable_ttlxj": True,         # 天天领现金
-    "enable_ltzf": True,          # 联通祝福
+    "enable_ltzf": False,          # 联通祝福
     "enable_woread": True,        # 联通阅读
     "enable_security": True,      # 安全管家
     "enable_ltyp": True,          # 联通云盘
     "enable_market": True,        # 权益超市 (🔺总开关, 必须开启内部功能才能运行)
     "enable_aiting": True,        # 联通爱听
-    "enable_wostore": True,       # 沃云手机
+    "enable_wostore": False,       # 沃云手机
     "enable_regional": True,      # 区域专区
 
     # --- ✅ 签到区内部细分开关 ---
@@ -4113,4 +4113,5 @@ def main():
     do_notify(users)
 if __name__ == "__main__":
     main()
+
 
