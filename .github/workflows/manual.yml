@@ -4,8 +4,11 @@ on:
   push:
     branches: [ main ]
   schedule:
-    - cron: '10 0,8,17 * * *' # UTC 0:00 等于北京时间早上 8:00
+    - cron: '10 1,5,9 * * *' 
   workflow_dispatch:
+
+env:
+  TZ: Asia/Shanghai # 确保脚本内部获取的时间也是北京时间
 
 jobs:
   build:
@@ -30,6 +33,8 @@ jobs:
       run: python chinaUnicom.py
 
     - name: 推送 Bark 通知
-      if: always() # 确保脚本运行完（无论成功失败）都会发通知
+      if: always() 
       run: |
-        curl -L "https://api.day.app/${{ secrets.BARK_KEY }}/联通脚本执行完毕/任务状态见日志"
+        # 使用 date 命令获取格式化后的北京时间
+        NOW=$(date "+%H:%M")
+        curl -L "https://api.day.app/${{ secrets.BARK_KEY }}/联通脚本/任务于 ${NOW} 执行完毕"
