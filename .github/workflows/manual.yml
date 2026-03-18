@@ -4,11 +4,12 @@ on:
   push:
     branches: [ main ]
   schedule:
+    # 每天北京时间 9:10, 13:10, 17:10 运行 (UTC 1:10, 5:10, 9:10)
     - cron: '10 1,5,9 * * *' 
   workflow_dispatch:
 
 env:
-  TZ: Asia/Shanghai # 确保脚本内部获取的时间也是北京时间
+  TZ: Asia/Shanghai # 设置全局时区为北京时间
 
 jobs:
   build:
@@ -29,12 +30,23 @@ jobs:
 
     - name: 运行脚本
       env:
+        # 这里的变量名需与你 python 脚本中 os.environ.get() 的名称一致
         chinaUnicomCookie: ${{ secrets.CHINAU_COOKIE }}
       run: python chinaUnicom.py
 
     - name: 推送 Bark 通知
-      if: always() 
+      if: always() # 无论脚本成功或失败都发送通知
       run: |
-        # 使用 date 命令获取格式化后的北京时间
+        # 1. 获取格式化后的北京时间
         NOW=$(date "+%H:%M")
-        curl -L "https://api.day.app/${{ secrets.BARK_KEY }}/联通脚本/任务于 ${NOW} 执行完毕"
+        
+        # 2. 准备推送内容
+        TITLE="联通脚本"
+        BODY="任务于 ${NOW} 执行完毕"
+        
+        # 3. 使用 Python 对中文进行 URL 编码（解决 Malformed input 报错的关键）
+        ENCODED_TITLE=$(python3 -c "import urllib.parse; print(urllib.parse.quote('$TITLE'))")
+        ENCODED_BODY=$(python3 -c "import urllib.parse; print(urllib.parse.quote('$BODY'))")
+        
+        # 4. 发送请求
+        curl -L "https://api.day.app/${{ secrets.BARK_KEY }}/${ENCODED_TITLE}/${ENCODED_BODY}"
