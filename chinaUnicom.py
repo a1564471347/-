@@ -104,7 +104,7 @@ globalConfig = {
     "enable_ltyp": True,          # 联通云盘
     "enable_market": True,        # 权益超市 (🔺总开关, 必须开启内部功能才能运行)
     "enable_aiting": True,        # 联通爱听
-    "enable_wostore": True,       # 沃云手机
+    "enable_wostore": False,       # 沃云手机
     "enable_regional": True,      # 区域专区
 
     # --- ✅ 签到区内部细分开关 ---
