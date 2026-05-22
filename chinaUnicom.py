@@ -104,7 +104,7 @@ globalConfig = {
     "enable_ttlxj": True,         # 天天领现金
     "enable_ttxc": True,          # 通通乡村
     "enable_ltzf": True,          # 联通祝福
-    "enable_woread": False,        # 联通阅读
+    "enable_woread": True,        # 联通阅读
     "enable_security": True,      # 安全管家
     "enable_ltyp": True,          # 联通云盘
     "enable_market": True,        # 权益超市 (🔺总开关, 必须开启内部功能才能运行)
