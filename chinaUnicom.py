@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-中国联通 Python 版 v1.0.9
+中国联通 Python 版 v1.1.0
 
 包含以下功能:
 1. 首页签到 (话费红包/积分)
@@ -10,11 +10,17 @@
 5. 安全管家 (日常任务/积分领取)
 6. 联通云盘 (签到/AI互动/文件上传/抽奖活动/重复清理)
 7. 联通阅读 (自动获取书籍/心跳阅读/抽奖/查红包)
-8. 联通爱听 (积分任务/自动签到/阅读挂机/分享任务)
+8. 联通爱听 (JF积分任务/自动签到/任务完成/积分查询)
 9. 沃云手机 (签到/任务/抽奖)
 10. 区域专区 (自动识别安徽超级星期五/辽宁福利魔方/新疆/河南/云南执行特有任务)
 
 更新说明:
+
+### 20260526
+v1.1.0:
+- 沃云手机：重构任务模块，升级全新接口并支持最新积分抽奖与时长获取。
+- 沃云手机：统一任务日志输出，减少重复任务列表打印。
+- 联通爱听：重构 JF 积分任务中心链路，支持签到、任务完成与积分查询，并优化接口响应日志展示。
 
 ### 20260430
 v1.0.9:
@@ -67,7 +73,7 @@ v1.0.6:
 
 From: YaoHuo8648
 Email: zheyizzf@188.com
-Update: 2026.04.30
+Update: 2026.05.26
 """
 import os
 import sys
@@ -94,6 +100,7 @@ from requests.packages.urllib3.util.retry import Retry
 from Crypto.Cipher import AES, PKCS1_v1_5
 from Crypto.PublicKey import RSA
 from Crypto.Util.Padding import pad, unpad
+SCRIPT_VERSION = "v1.1.0"
 # ========================================
 # 全局配置 (globalConfig)
 # true=开启, false=关闭
@@ -104,7 +111,7 @@ globalConfig = {
     "enable_ttlxj": True,         # 天天领现金
     "enable_ttxc": True,          # 通通乡村
     "enable_ltzf": True,          # 联通祝福
-    "enable_woread": True,        # 联通阅读
+    "enable_woread": False,        # 联通阅读
     "enable_security": True,      # 安全管家
     "enable_ltyp": True,          # 联通云盘
     "enable_market": True,        # 权益超市 (🔺总开关, 必须开启内部功能才能运行)
@@ -200,17 +207,16 @@ AH_FRIDAY_AMOUNT = os.environ.get("UNICOM_AH_FRIDAY_AMOUNT", "")
 AH_FRIDAY_BASE_URL = "http://123.138.11.116:8080"
 AH_FRIDAY_SECKILL_TIMES = int(os.environ.get("UNICOM_AH_FRIDAY_TIMES", "50") or "50")
 AH_FRIDAY_INTERVAL = float(os.environ.get("UNICOM_AH_FRIDAY_INTERVAL", "0.3") or "0.3")
-WOSTORE_CLOUD_ACTIVITY_CODE = "HD2026033000125"
+WOSTORE_CLOUD_ACTIVITY_CODE = os.environ.get("UNICOM_WOSTORE_ACTIVITY_CODE", "Points_Obtain_2507")
+WOSTORE_CLOUD_SIGN_CODE = os.environ.get("UNICOM_WOSTORE_SIGN_CODE", "Points_Sign_2507")
+WOSTORE_CLOUD_LOGIN_ACTIVITY_ID = os.environ.get("UNICOM_WOSTORE_LOGIN_ACTIVITY_ID", "HD2026033000125")
+WOSTORE_CLOUD_ACTIVITY_CODES = [x.strip() for x in os.environ.get("UNICOM_WOSTORE_ACTIVITY_CODES", "Points_Obtain_2507,Points_Obtain_2506,Points_Obtain_2505,Points_Obtain_2504").split(",") if x.strip()]
+WOSTORE_CLOUD_LOTTERY_CODES = [x.strip() for x in os.environ.get("UNICOM_WOSTORE_LOTTERY_CODES", "Points_Obtain_2507,Points_Obtain_2506,Points_Obtain_2505,Points_Obtain_2504").split(",") if x.strip()]
 WOSTORE_CLOUD_TIMEOUT = int(os.environ.get("UNICOM_WOSTORE_TIMEOUT", "15") or "15")
 WOSTORE_CLOUD_RETRIES = int(os.environ.get("UNICOM_WOSTORE_RETRIES", "3") or "3")
 CLOUD_SPEED_ACTIVITY_ID = "Mjc="
 CLOUD_SPEED_TEAM_CONTEXT = {}
 UNICOM_TOKEN_CACHE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "unicom_token_cache.json")
-if "UNICOM_PROXY_API" not in os.environ:
-    os.environ.pop("http_proxy", None)
-    os.environ.pop("https_proxy", None)
-    os.environ.pop("HTTP_PROXY", None)
-    os.environ.pop("HTTPS_PROXY", None)
 LOGIN_PUB_KEY = """-----BEGIN PUBLIC KEY-----
 MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDc+CZK9bBA9IU+gZUOc6FUGu7yO9WpTNB0PzmgFBh96Mg1WrovD1oqZ+eIF4LjvxKXGOdI79JRdve9NPhQo07+uqGQgE4imwNnRx7PFtCRryiIEcUoavuNtuRVoBAm6qdB0SrctgaqGfLgKvZHOnwTjyNqjBUxzMeQlEC2czEMSwIDAQAB
 -----END PUBLIC KEY-----"""
@@ -235,9 +241,28 @@ def safe_int(value, default=0):
     except Exception:
         return default
 
+def pretty_json(data):
+    try:
+        return json.dumps(data, ensure_ascii=False, indent=2, default=str)
+    except Exception:
+        return str(data)
+
+def response_summary(data):
+    if not isinstance(data, dict):
+        return str(data)
+    meta = data.get("meta")
+    source = meta if isinstance(meta, dict) else data
+    code = source.get("code") or source.get("resultCode") or source.get("rsp_code")
+    msg = source.get("message") or source.get("msg") or source.get("desc") or source.get("resultMsg") or source.get("rsp_desc")
+    if msg:
+        return str(msg)
+    if code:
+        return "接口返回异常"
+    return "接口返回异常"
+
 class FailoverSession:
     """包装 requests.Session，自动为所有请求添加代理故障转移"""
-    RETRIABLE_KEYWORDS = ("Max retries exceeded", "timed out", "connection", "SOCKS", "ProxyError", "ConnectionError")
+    RETRIABLE_KEYWORDS = ("Max retries exceeded", "timed out", "connection", "SOCKS", "ProxyError", "ConnectionError", "SSLError", "SSLEOF")
 
     def __init__(self, session, owner):
         self._session = session
@@ -262,12 +287,22 @@ class FailoverSession:
         try:
             return self._session.request(method, url, **kwargs)
         except Exception as e:
-            if self._should_failover(str(e)):
+            if self._should_failover(str(e)) or (os.environ.get("UNICOM_PROXY_API") and isinstance(e, requests.exceptions.RequestException)):
                 self._owner.log(f"⚠️ [自动故障转移] {url} 请求异常: {e}")
-                self._owner.failover_proxy()
+                err_str = str(e).lower()
+                is_ssl_or_proxy_err = any(x in err_str for x in ("ssleof", "unexpected_eof", "sslerror", "socks", "proxyerror"))
+                if is_ssl_or_proxy_err:
+                    self._owner.log("⚠️ [自动故障转移] 检测到 SSL 或代理严重异常，强制拉取新 IP...")
+                    self._owner.configure_proxy()
+                else:
+                    self._owner.failover_proxy()
                 if self._has_streaming_payload(kwargs):
                     raise
-                return self._session.request(method, url, **kwargs)
+                try:
+                    return self._session.request(method, url, **kwargs)
+                except Exception as retry_err:
+                    self._owner.log(f"⚠️ [自动故障转移] {url} 重试仍异常: {retry_err}")
+                    return None
             raise
 
     def get(self, url, **kwargs):
@@ -415,7 +450,7 @@ class UserService:
             return False
         self.log("⚠️ [故障转移] 检测到网络不稳定，正在检查当前代理是否存活...")
         try:
-            requests.get("https://www.baidu.com", proxies=self.session.proxies, timeout=3)
+            requests.get("https://m.client.10010.com/mobileService/business/get/getCity", proxies=self.session.proxies, timeout=3)
             self.log("✅ [故障转移] 经测试当前IP仍有效，继续复用，暂不提取新IP。")
             time.sleep(1)
             return True
@@ -473,7 +508,6 @@ class UserService:
 
     def request_direct(self, method, url, **kwargs):
         session = requests.Session()
-        session.trust_env = False
         session.verify = False
         try:
             return session.request(method, url, **kwargs)
@@ -505,36 +539,7 @@ class UserService:
                 f"59af546f3c826988332376b7d18c8ea2398ee3a9c3db947e2471d32a49") + rnd() + rnd()
 
     def unicom_login(self):
-        self.log(f"正在使用账号 {mask_str(self.account_mobile)} 进行登录...")
-        if not self.appId:
-            self.appId = self.generate_appid()
-            self.log(f"生成临时 AppId: {self.appId[:15]}...")
-        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        try:
-            payload = {
-                "version": COMMON_CONSTANTS["APP_VERSION"],
-                "mobile": self.rsa_encrypt(self.account_mobile),
-                "reqtime": timestamp,
-                "deviceModel": "Android",
-                "netWay": "Wifi",
-                "isR4": "0",
-                "password": self.rsa_encrypt(self.account_password),
-                "appId": self.appId
-            }
-            url = "https://m.client.10010.com/mobileService/login.htm"
-            res = self.session.post(url, data=payload)
-            result = res.json()
-            if result.get('code') in ['0', '0000']:
-                if result.get('token_online'):
-                    self.token_online = result['token_online']
-                    self.log("✅ 登录接口验证通过")
-                    return True
-                else:
-                    self.log("❌ 登录响应中未找到 token_online")
-            else:
-                self.log(f"❌ 登录失败: {result.get('desc')} (Code: {result.get('code')})")
-        except Exception as e:
-            self.log(f"❌ 登录过程异常: {str(e)}")
+        self.log("账号密码登录已失效，请使用 Token#AppId 或纯手机号本地缓存")
         return False
 
     def request(self, method, url, **kwargs):
@@ -553,12 +558,32 @@ class UserService:
             timeout = kwargs.get('timeout', 10)
             if 'timeout' in kwargs: del kwargs['timeout']
             response = self.session.request(method, url, timeout=timeout, **kwargs)
+            if response is None:
+                self.log(f"请求 {url} 无响应")
+                return None
             if response.status_code >= 400:
                 self.log(f"请求 {url} 返回状态码 {response.status_code}")
             return response
         except Exception as e:
             self.log(f"请求 {url} 异常: {str(e)}")
             return None
+
+    def ensure_login(self, max_attempts=3):
+        for attempt in range(1, max_attempts + 1):
+            if attempt > 1:
+                self.log(f"🔄 登录重试 {attempt}/{max_attempts}")
+            if not self.token_online and self.account_mobile:
+                self.load_token_from_cache()
+            if self.token_online and self.onLine():
+                self.save_token_to_cache()
+                return True
+            if not self.token_online:
+                if self.account_password:
+                    self.log("账号密码登录已失效，未找到可用 Token，跳过")
+                return False
+            if attempt < max_attempts:
+                time.sleep(2)
+        return False
 
     def load_token_from_cache(self):
         if not self.account_mobile:
@@ -694,6 +719,8 @@ class UserService:
                 self.log("登录成功")
                 self.city_info = result.get('list', [])
                 self.ecs_token = result.get('ecs_token')
+                self.t3_token = result.get('t3_token', '')
+                self.private_token = result.get('private_token', '')
                 return True
             else:
                 self.log(f"登录失败[{code}]: {result.get('msg')}")
@@ -885,6 +912,64 @@ class UserService:
                 self.log(f"签到区-领取奖励失败[{code}]: {result.get('desc', '')}")
         except Exception as e:
             self.log(f"sign_getTaskReward 异常: {str(e)}")
+
+    def sign_month_sign_gift(self, is_query_only=False):
+        try:
+            url = "https://activity.10010.com/sixPalaceGridTurntableLottery/floor/getMonthSign"
+            headers = {"Referer": "https://img.client.10010.com/"}
+            res = self.request("get", url, headers=headers, timeout=10)
+            if not res: return
+            result = res.json()
+            code = result.get('code')
+            if code != "0000":
+                self.log(f"签到区-月签有礼: 查询失败[{code}]: {result.get('desc', '')}")
+                return
+            task_list = result.get('data', {}).get('taskList', []) or []
+            if not task_list:
+                self.log("签到区-月签有礼: 暂无月签任务")
+                return
+            claim_tasks = [
+                t for t in task_list
+                if str(t.get('taskStatus')) == "1" and t.get('taskId') and t.get('id')
+            ]
+            claimed_count = sum(1 for t in task_list if str(t.get('taskStatus')) == "2")
+            if is_query_only:
+                self.log(f"签到区-月签有礼: 可领取 {len(claim_tasks)} 个，已领取 {claimed_count} 个")
+                return
+            if not claim_tasks:
+                self.log(f"签到区-月签有礼: 暂无可领取奖励，已领取 {claimed_count}/{len(task_list)}")
+                return
+            for task in claim_tasks:
+                self.sign_get_month_sign_reward(task)
+                time.sleep(1)
+        except Exception as e:
+            self.log(f"sign_month_sign_gift 异常: {str(e)}")
+
+    def sign_get_month_sign_reward(self, task):
+        task_name = task.get('taskName') or "月签奖励"
+        try:
+            url = "https://activity.10010.com/sixPalaceGridTurntableLottery/task/getTaskReward"
+            params = {
+                "taskId": task.get('taskId'),
+                "taskType": "30",
+                "id": task.get('id')
+            }
+            headers = {"Referer": "https://img.client.10010.com/"}
+            res = self.request("get", url, params=params, headers=headers, timeout=10)
+            if not res: return
+            result = res.json()
+            code = result.get('code')
+            data = result.get('data', {}) or {}
+            if code == "0000" and data.get('code') == "0000":
+                prize_name = data.get('prizeName', '')
+                prize_red = data.get('prizeNameRed', '')
+                reward = f"[{prize_name}] {prize_red}".strip() if prize_name or prize_red else data.get('statusDesc', '领取成功')
+                self.log(f"签到区-月签有礼: [{task_name}] {reward}", notify=True)
+                return
+            msg = data.get('desc') or result.get('desc') or result.get('msg') or "未知错误"
+            self.log(f"签到区-月签有礼: [{task_name}] 领取失败[{data.get('code') or code}]: {msg}")
+        except Exception as e:
+            self.log(f"sign_get_month_sign_reward 异常: {str(e)}")
 
     def sign_grabCoupon(self):
         sc = globalConfig.get("sign_config", {})
@@ -4069,8 +4154,8 @@ class UserService:
     def aiting_jf_headers(self, with_signature=False):
         headers = {
             'ticket': unquote(self.aiting_biz_ticket),
-            'pageid': 's789081246969976832',
-            'clienttype': 'aiting_android',
+            'pageid': getattr(self, 'aiting_pageid', 's789081246969976832'),
+            'clienttype': 'aiting_ios',
             'partnersid': '1706',
             'content-type': 'application/json;charset=UTF-8',
             'User-Agent': 'Mozilla/5.0 (Linux; Android 12; Redmi K30 Pro Build/SKQ1.220303.001; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/92.0.4515.159 Mobile Safari/537.36 WoReaderApp/Android',
@@ -4116,7 +4201,7 @@ class UserService:
             if data.get('code') == '0000' and secret:
                 self.aiting_secretKey = secret.encode('utf-8')
                 return self.aiting_secretKey
-            self.log(f"爱听任务: getSecretKey 失败: {data}")
+            self.log(f"爱听任务: getSecretKey 失败 - {response_summary(data)}")
         except Exception as e:
             self.log(f"爱听任务: getSecretKey 异常: {e}")
         return None
@@ -5044,7 +5129,7 @@ class UserService:
         res = self.session.post(url, json=body, headers=headers).json()
         if res.get("code") == "0000":
             return res.get("data", {}).get("token")
-        self.log(f"爱听登录: 沃阅读登录失败: {res}")
+        self.log(f"爱听登录: 沃阅读登录失败 - {response_summary(res)}")
         return None
 
     def aiting_get_jwt_token(self, statisticsinfo):
@@ -5075,7 +5160,7 @@ class UserService:
             res = self.session.post(url, json=body, headers=headers).json()
             if res.get("code") == "0000" and res.get("key"):
                 return res.get("key")
-            self.log(f"爱听登录: 获取JWT失败: {res}")
+            self.log(f"爱听登录: 获取JWT失败 - {response_summary(res)}")
         except Exception as e:
             self.log(f"爱听登录: 获取JWT异常: {e}")
         return None
@@ -5122,13 +5207,13 @@ class UserService:
                     token = msg.get("accountinfo", {}).get("token") or token
                     userid = msg.get("accountinfo", {}).get("userid") or userid
                 return {"token": token, "userid": userid}
-            self.log(f"爱听登录: 业务API登录失败: {res}")
+            self.log(f"爱听登录: 业务API登录失败 - {response_summary(res)}")
         except Exception as e:
             self.log(f"爱听登录: 业务API异常: {e}")
         return None
 
     def aiting_login_flow(self):
-        self.log("正在执行爱听登录流程...")
+        self.log("爱听任务: 正在执行登录流程...")
         woread_token = self.aiting_woread_login(self.mobile)
         if not woread_token: return False
         self.aiting_woread_token = woread_token
@@ -5145,7 +5230,7 @@ class UserService:
         if not login_data: return False
         self.aiting_biz_token = login_data.get('token')
         self.aiting_base_userid = login_data.get('userid') or self.mobile
-        self.log(f"✅ 爱听业务登录成功! Token已获取")
+        self.log("爱听任务: 登录成功，Token已获取")
         biz_ticket = self.aiting_get_ticket()
         if biz_ticket:
             self.aiting_biz_ticket = biz_ticket
@@ -5191,11 +5276,19 @@ class UserService:
             if res.get("code") == "0000":
                 msg = res.get("message", "")
                 if "ticket=" in msg:
-                    match = re.search(r'ticket=([^&]+)', msg)
-                    if match:
-                        return match.group(1)
-                return msg # Fallback if message is ticket itself? No, standard is URL.
-            self.log(f"爱听登录: 获取Ticket失败: {res}")
+                    parsed = urlparse(msg)
+                    params = parse_qs(parsed.query)
+                    ticket = (params.get("ticket") or [""])[0]
+                    distribute_id = (params.get("distributeId") or [""])[0]
+                    pageid = (params.get("pageid") or params.get("pageID") or [""])[0]
+                    if not pageid:
+                        pageid = next((part for part in parsed.path.split("/") if part.startswith("s")), "")
+                    if ticket:
+                        self.aiting_distribute_id = distribute_id
+                        self.aiting_pageid = pageid or "s789081246969976832"
+                        return ticket
+                return msg
+            self.log(f"爱听登录: 获取Ticket失败 - {response_summary(res)}")
         except Exception as e:
             self.log(f"爱听登录: 获取Ticket异常: {e}")
         return None
@@ -5204,38 +5297,99 @@ class UserService:
         url = "https://m.jf.10010.com/jf-external-application/jftask/taskDetail"
         headers = self.aiting_jf_headers()
         headers['Referer'] = f"https://m.jf.10010.com/jf-external-application/index.html?ticket={ticket}&pageID=s789081246969976832"
-        response = self.session.post(url, json={}, headers=headers)
-        self.update_aiting_jea_id(response)
+        try:
+            response = self.session.post(url, json={}, headers=headers)
+            self.update_aiting_jea_id(response)
+        except Exception as e:
+            self.log(f"爱听任务: 积分任务列表请求异常: {e}")
+            return []
+        if response is None:
+            self.log("爱听任务: 积分任务列表无响应")
+            return []
         try:
             res = response.json()
         except Exception:
-            self.log(f"  ⚠️ 积分任务列表响应非JSON (状态码{response.status_code})")
+            self.log(f"爱听任务: 积分任务列表响应非JSON (状态码{getattr(response, 'status_code', '未知')})")
             return []
         return res.get("data", {}).get("taskDetail", {}).get("taskList", [])
 
     def jf_to_finish(self, ticket, task_code):
         url = "https://m.jf.10010.com/jf-external-application/jftask/toFinish"
-        response = self.session.post(
-            url,
-            json={'taskCode': task_code},
-            headers=self.aiting_jf_headers(with_signature=True),
-        )
-        self.update_aiting_jea_id(response)
-
-    def jf_pop_up(self, ticket):
-        url = "https://m.jf.10010.com/jf-external-application/jftask/popUp"
-        response = self.session.post(url, json={}, headers=self.aiting_jf_headers())
-        self.update_aiting_jea_id(response)
+        try:
+            response = self.session.post(
+                url,
+                json={'taskCode': task_code},
+                headers=self.aiting_jf_headers(with_signature=True),
+            )
+            self.update_aiting_jea_id(response)
+        except Exception as e:
+            self.log(f"爱听任务: 积分任务提交异常: {e}")
+            return False
+        if response is None:
+            self.log("爱听任务: 积分任务提交无响应")
+            return False
         try:
             res = response.json()
         except Exception:
-            self.log(f"  └─ ⚠️ 积分弹窗响应非JSON (状态码{response.status_code})")
+            self.log(f"爱听任务: 积分任务提交响应非JSON (状态码{getattr(response, 'status_code', '未知')})")
+            return False
+        self.log(f"爱听任务: 积分任务提交 - {response_summary(res)}")
+        return isinstance(res, dict) and res.get('code') == "0000"
+
+    def jf_sign(self, ticket, task_code):
+        url = "https://m.jf.10010.com/jf-external-application/uasptask/sign"
+        referer = (
+            f"https://m.jf.10010.com/ts-mobile/well/{getattr(self, 'aiting_pageid', 's789081246969976832')}"
+            f"?distributeId={getattr(self, 'aiting_distribute_id', '')}&partnersId=1706&clientType=aiting_ios&ticket={ticket}"
+        )
+        headers = self.aiting_jf_headers(with_signature=True)
+        headers.update({"referer": referer, "origin": "https://m.jf.10010.com"})
+        try:
+            response = self.session.post(
+                url,
+                json={'taskCode': task_code, 'remindEnabled': '1'},
+                headers=headers,
+            )
+            self.update_aiting_jea_id(response)
+        except Exception as e:
+            self.log(f"爱听任务: 积分签到异常: {e}")
+            return False
+        if response is None:
+            self.log("爱听任务: 积分签到无响应")
+            return False
+        try:
+            res = response.json()
+        except Exception:
+            self.log(f"爱听任务: 积分签到响应非JSON (状态码{getattr(response, 'status_code', '未知')})")
+            return False
+        if isinstance(res, dict) and res.get('code') == "0000":
+            self.log(f"爱听任务: 积分签到 - {res.get('msg') or '成功'}")
+            return True
+        if isinstance(res, dict):
+            self.log(f"爱听任务: 积分签到返回 - {res.get('desc') or res.get('msg') or response_summary(res)}")
+        return False
+
+    def jf_pop_up(self, ticket):
+        url = "https://m.jf.10010.com/jf-external-application/jftask/popUp"
+        try:
+            response = self.session.post(url, json={}, headers=self.aiting_jf_headers())
+            self.update_aiting_jea_id(response)
+        except Exception as e:
+            self.log(f"爱听任务: 积分弹窗请求异常: {e}")
+            return {}
+        if response is None:
+            self.log("爱听任务: 积分弹窗无响应")
+            return {}
+        try:
+            res = response.json()
+        except Exception:
+            self.log(f"爱听任务: 积分弹窗响应非JSON (状态码{getattr(response, 'status_code', '未知')})")
             return {}
         if isinstance(res, dict):
             if res.get('code') == "0000" and res.get('data', {}).get('score'):
-                self.log(f"  └─ 🎉 爱听任务: 获得 {res['data']['score']}", notify=True)
+                self.log(f"爱听任务: 获得 {res['data']['score']}", notify=True)
             elif res.get('code') != "0000":
-                self.log(f"  └─ 📝 积分弹窗返回: {res.get('desc', res)}")
+                self.log(f"爱听任务: 积分弹窗返回 - {res.get('desc') or response_summary(res)}")
         return res
 
     def aiting_complete_task_api(self, type_val):
@@ -5313,7 +5467,7 @@ class UserService:
         res = self.session.post(url, json=body, headers=headers)
         if res.status_code == 200:
              self.last_read_submission_time = time.time()
-             self.log(f"✅ 阅读时长上报成功 ({read_time_seconds}s)")
+             self.log(f"爱听任务: 阅读时长上报成功 ({read_time_seconds}s)")
 
     def aiting_new_read_add(self):
         timestamp = self.aiting_timestamp()
@@ -5330,7 +5484,7 @@ class UserService:
         self.session.post(url, params=params, json=body, headers=headers)
 
     def aiting_task(self, is_query_only=False):
-        self.log("==== 联通爱听任务 ====")
+        self.log("==== 联通爱听 ====")
         if not self.aiting_login_flow():
             self.log("爱听任务: 登录失败，跳过")
             return
@@ -5339,168 +5493,376 @@ class UserService:
             self.aiting_query_integral()
         except: pass
         task_list = self.jf_get_task_detail(self.aiting_biz_ticket)
-        done_list = [t for t in task_list if t.get('finish') == 1]
+        safe_tasks = [t for t in task_list if "邀请" not in t.get('taskName', '')]
+        if safe_tasks:
+            self.log(f"爱听任务: 提取到 {len(safe_tasks)} 个任务")
+        done_list = [t for t in safe_tasks if int(t.get('finish') or 0) == 1]
         printed_names = set()
         for t in done_list:
              name = t.get('taskName')
              if name not in printed_names:
-                 self.log(f"  ✅ {name} ({t.get('finishCount')}/{t.get('needCount')})")
+                 self.log(f"爱听任务: 已完成[{name}] {t.get('finishCount')}/{t.get('needCount')}")
                  printed_names.add(name)
-        todo_list = [t for t in task_list if t.get('finish') == 0 and "邀请" not in t.get('taskName', '')]
-        if not todo_list:
+        self.log(f"爱听任务: 执行前完成 {len(done_list)}/{len(safe_tasks)} 个任务")
+        if not safe_tasks:
             self.log("爱听任务: ✅ 所有任务已完成")
             if is_query_only:
                 self.log("爱听任务: [查询模式] 跳过任务执行...")
             return
-        self.log(f"爱听任务: 发现 {len(todo_list)} 个待办任务")
+        self.log(f"爱听任务: 尝试执行 {len(safe_tasks)} 个任务")
         if is_query_only:
             self.log("爱听任务: [查询模式] 跳过任务执行...")
             return
-        read_tasks = [t for t in todo_list if ("阅读" in t.get('taskName','') or "听读" in t.get('taskName','')) and "邀请" not in t.get('taskName','')]
-        for task in read_tasks:
-            remaining = int(task.get('needCount', 1)) - int(task.get('finishCount', 0))
-            if remaining <= 0: continue
-            self.log(f"执行阅读任务: {task.get('taskName')} (剩余 {remaining} 次)")
-            for i in range(remaining):
-                self.jf_to_finish(self.aiting_biz_ticket, task.get('taskCode'))
-                self.log(f"  └─ 第 {i + 1}/{remaining} 次: 极速提交中...")
-                self.aiting_new_read_add()
-                time.sleep(5)
-                self.aiting_add_read_time(120)
-                time.sleep(2)
-                self.jf_pop_up(self.aiting_biz_ticket)
-        other_tasks = [t for t in todo_list if not any(x in t.get('taskName','') for x in ["通知", "阅读", "听读", "邀请", "签到"])]
-        notify_task = next((t for t in todo_list if "通知" in t.get('taskName','')), None)
-        if notify_task:
-            self.log(f"执行通知任务: {notify_task.get('taskName')}")
-            self.jf_to_finish(self.aiting_biz_ticket, notify_task.get('taskCode'))
-            time.sleep(1)
-            self.aiting_complete_task_api(2)
+        for task in safe_tasks:
+            task_code = task.get('taskCode')
+            if not task_code:
+                continue
+            task_type = str(task.get('taskType', ''))
+            self.log(f"爱听任务: 执行[{task.get('taskName')}] 类型 {task_type or '未知'}")
+            if task_type == '4' or "签到" in task.get('taskName', ''):
+                self.jf_sign(self.aiting_biz_ticket, task_code)
+            else:
+                self.jf_to_finish(self.aiting_biz_ticket, task_code)
+            time.sleep(random.uniform(1, 2))
+        self.log("爱听任务: 开始提交完成任务请求")
+        for _ in range(5):
+            self.aiting_complete_task_api(4)
+            time.sleep(random.uniform(1, 2))
+        if getattr(self, 'aiting_jwt', None) and getattr(self, 'aiting_woread_token', None):
+            self.aiting_new_read_add()
             time.sleep(2)
-            self.jf_pop_up(self.aiting_biz_ticket)
-        for task in other_tasks:
-            remaining = int(task.get('needCount', 1)) - int(task.get('finishCount', 0))
-            if remaining <= 0: continue
-            self.log(f"执行通用任务: {task.get('taskName')} (剩余 {remaining} 次)")
-            for i in range(remaining):
-                 self.jf_to_finish(self.aiting_biz_ticket, task.get('taskCode'))
-                 time.sleep(1.5)
-                 self.aiting_complete_task_api(4) # Type 4
-                 time.sleep(2)
-                 self.jf_pop_up(self.aiting_biz_ticket)
+            self.aiting_add_read_time(120)
+        self.jf_pop_up(self.aiting_biz_ticket)
+        after_tasks = [t for t in self.jf_get_task_detail(self.aiting_biz_ticket) if "邀请" not in t.get('taskName', '')]
+        after_done = [t for t in after_tasks if int(t.get('finish') or 0) == 1]
+        self.log(f"爱听任务: 执行后完成 {len(after_done)}/{len(after_tasks)} 个任务")
+        for t in after_tasks:
+            self.log(f"爱听任务: {t.get('taskName')} - {t.get('finishCount')}/{t.get('needCount')} finish={t.get('finish')}")
         try:
             self.aiting_query_integral()
         except: pass
 
+    def wostore_cloud_get_ticket(self):
+        if not getattr(self, 'ecs_token', ''):
+            self.log("沃云手机: 缺少 ecs_token，无法获取入口 Ticket")
+            return ""
+        city_code = ""
+        if self.city_info and isinstance(self.city_info, list):
+            city_code = str((self.city_info[0] or {}).get("cityCode") or "")
+        headers = {
+            "User-Agent": "ChinaUnicom4.x/12.11 (com.chinaunicom.mobilebusiness; build:36; iOS 16.6.0) Alamofire/4.7.3 unicom{version:iphone_c@12.1100}",
+            "Accept": "*/*",
+            "Accept-Encoding": "gzip;q=1.0, compress;q=0.5",
+            "Content-Type": "application/x-www-form-urlencoded",
+            "Accept-Language": "zh-Hans-CN;q=1.0, en-CN;q=0.9",
+            "Cookie": (
+                f"ecs_token={self.ecs_token};t3_token={getattr(self, 't3_token', '')};"
+                f"PvSessionId={datetime.now().strftime('%Y%m%d%H%M%S')}{self.uuid};devicedId={self.uuid};"
+                f"c_mobile={self.account_mobile or self.mobile};c_version=iphone_c@12.1100;city=036|{city_code}|90063345|-99;"
+            ),
+        }
+        try:
+            res = self.session.get(
+                "https://m.client.10010.com/edop_ng/getTicketByNative",
+                params={"token": self.ecs_token, "appId": "edop_unicom_68e8fa69"},
+                headers=headers,
+                timeout=20,
+            ).json()
+            if res.get("rsp_code") == "0000" and res.get("ticket"):
+                return res.get("ticket")
+            self.log(f"沃云手机: 获取入口 Ticket 失败 - {res.get('rsp_desc') or res.get('msg') or pretty_json(res)}")
+        except Exception as e:
+            self.log(f"沃云手机: 获取入口 Ticket 异常 {e}")
+        return ""
+
     def wostore_cloud_login(self, ticket):
         try:
-            url1 = "https://member.zlhz.wostore.cn/wcy_member/yunPhone/h5Awake/businessHall"
-            body1 = {
-                "cpId": "91002997", "channelId": "ST-Zujian001-gs", "ticket": ticket,
-                "env": "prod", "transId": "S2ndpage1235+开福袋！+F1+CJDD00D0001+iphone_c@12.0801",
-                "qkActId": None
-            }
-            headers1 = {"Origin": "https://h5forphone.wostore.cn", "Content-Type": "application/json"}
-            json_data = json.dumps(body1, separators=(',', ':'), ensure_ascii=True)
-            res1 = self.session.post(url1, data=json_data, headers=headers1, timeout=15).json()
-            if str(res1.get("code")) != "0":
-                msg = res1.get("msg", str(res1))
-                self.log(f"沃云手机: 登录第一步失败 - {msg}")
-                return None
-            redirect_url = res1.get("data", {}).get("url", "")
-            match = re.search(r'token=([^&]+)', redirect_url)
-            if not match:
-                if "protocol" in redirect_url or "sign" in redirect_url:
-                    self.log("沃云手机: 未开通业务 (检测到协议签署跳转)，跳过")
-                else:
-                    self.log(f"沃云手机: 无法提取 Token, 跳转URL: {redirect_url}")
-                return None
-            first_token = match.group(1)
-            time.sleep(1)
-            url2 = "https://uphone.wostore.cn/h5api/activity-service/user/login"
-            body2 = {
-                "identityType": "cloudPhoneLogin", "code": first_token, "channelId": "ST-Zujian001-gs",
-                "activityId": WOSTORE_CLOUD_ACTIVITY_CODE, "device": "device"
-            }
-            headers2 = {"Origin": "https://uphone.wostore.cn", "X-USR-TOKEN": first_token}
-            res2 = {}
-            for attempt in range(1, WOSTORE_CLOUD_RETRIES + 1):
-                try:
-                    res2 = self.session.post(url2, json=body2, headers=headers2, timeout=WOSTORE_CLOUD_TIMEOUT).json()
-                    break
-                except Exception as e:
-                    if attempt >= WOSTORE_CLOUD_RETRIES:
-                        raise
-                    self.log(f"沃云手机: 登录第二步超时重试({attempt}/{WOSTORE_CLOUD_RETRIES}) - {e}")
-                    time.sleep(2)
-            if str(res2.get("code")) == "200":
-                user_token = res2.get("data", {}).get("user_token")
-                return {"firstToken": first_token, "user_token": user_token}
-            else:
-                self.log(f"沃云手机: 登录第二步失败 - {res2.get('msg', str(res2))}")
-                return None
+            res = self.session.post(
+                "https://uphone.wostore.cn/h5api/token-service/getTokenByTicket",
+                data=json.dumps({"ticket": ticket, "channel": "ST-Kuaidai001"}),
+                headers={
+                    "User-Agent": "ChinaUnicom4.x/12.11 (com.chinaunicom.mobilebusiness; build:36; iOS 16.6.0) Alamofire/4.7.3 unicom{version:iphone_c@12.1100}",
+                    "Accept": "*/*",
+                    "Accept-Encoding": "gzip;q=1.0, compress;q=0.5",
+                    "Content-Type": "application/json",
+                    "channel": "ST-Kuaidai001",
+                    "X-Tingyun": "c=A|uBuVhVARE0A",
+                    "source": "4",
+                    "os": "H5",
+                    "Accept-Language": "zh-Hans-CN;q=1.0, en-CN;q=0.9",
+                    "channelCode": "ST-Kuaidai001",
+                },
+                timeout=20,
+                verify=False,
+            ).json()
+            if str(res.get("code")) == "200" and res.get("data"):
+                self.log("沃云手机: 云手机Token获取成功")
+                return {"cloud_token": res.get("data")}
+            self.log(f"沃云手机: 获取Token失败 - {res.get('msg') or pretty_json(res)}")
         except Exception as e:
             self.log(f"沃云手机: 登录异常 {e}")
-            return None
+        return None
 
-    def wostore_cloud_sign(self, user_token):
-        try:
-            url = "https://uphone.wostore.cn/h5api/activity-service/points/v1/sign"
-            body = {"activityCode": "Points_Sign_2507"}
-            headers = {"X-USR-TOKEN": user_token, "Origin": "https://uphone.wostore.cn"}
-            res = self.session.post(url, json=body, headers=headers).json()
-            if res.get("code") == 200:
-                self.log("沃云手机: 积分签到成功", notify=True)
-            else:
-                pass # Fail silently or log if needed context
-        except Exception:
-            pass
+    def wostore_cloud_h5_headers(self, cloud_token=None):
+        return {
+            "Accept": "application/json, text/plain, */*",
+            "Accept-Encoding": "gzip, deflate, br",
+            "Accept-Language": "zh-CN,zh-Hans;q=0.9",
+            "Connection": "keep-alive",
+            "Content-Type": "application/json",
+            "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 MicroMessenger/8.0.57(0x18003930) NetType/WIFI Language/zh_CN",
+            "Host": "h5forphone.wostore.cn",
+            "X-Requested-With": "XMLHttpRequest",
+            **({"Authorization": cloud_token} if cloud_token else {}),
+        }
 
-    def wostore_cloud_task_list(self, user_token):
-        try:
-            url = "https://uphone.wostore.cn/h5api/activity-service/user/task/list"
-            body = {"activityCode": WOSTORE_CLOUD_ACTIVITY_CODE}
-            headers = {"X-USR-TOKEN": user_token}
-            self.session.post(url, json=body, headers=headers)
-        except Exception:
-            pass
+    def wostore_cloud_activity_headers(self, user_token=""):
+        return {
+            "Accept": "application/json, text/plain, */*",
+            "Accept-Encoding": "gzip, deflate, br",
+            "Accept-Language": "zh-CN,zh-Hans;q=0.9",
+            "Connection": "keep-alive",
+            "Content-Type": "application/json",
+            "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 MicroMessenger/8.0.57(0x18003930) NetType/WIFI Language/zh_CN",
+            "Host": "uphone.wostore.cn",
+            "Origin": "https://uphone.wostore.cn",
+            "Sec-Fetch-Dest": "empty",
+            "Sec-Fetch-Mode": "cors",
+            "Sec-Fetch-Site": "same-origin",
+            "X-USR-TOKEN": user_token,
+        }
 
-    def wostore_cloud_get_chance(self, user_token, task_code):
-        try:
-            url = "https://uphone.wostore.cn/h5api/activity-service/user/task/raffle/get"
-            body = {"activityCode": WOSTORE_CLOUD_ACTIVITY_CODE, "taskCode": task_code}
-            headers = {"X-USR-TOKEN": user_token}
-            self.session.post(url, json=body, headers=headers)
-        except Exception:
-            pass
+    def wostore_cloud_headers(self, user_token):
+        return {
+            "Accept": "application/json, text/plain, */*",
+            "Accept-Encoding": "gzip, deflate, br",
+            "Accept-Language": "zh-CN,zh-Hans;q=0.9",
+            "Connection": "keep-alive",
+            "Content-Type": "application/json",
+            "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 unicom{version:iphone_c@12.0601};ltst;OSVersion/16.6",
+            "Authorization": user_token,
+        }
 
-    def wostore_cloud_draw(self, user_token):
+    def wostore_cloud_bucp_get(self, path, user_token):
+        url = f"https://uphone.wo-adv.cn/bucp{path}"
         try:
-            url = "https://uphone.wostore.cn/h5api/activity-service/lottery"
-            body = {"activityCode": WOSTORE_CLOUD_ACTIVITY_CODE}
-            headers = {"X-USR-TOKEN": user_token}
-            res = self.session.post(url, json=body, headers=headers).json()
-            if res.get("code") == 200:
-                prize = res.get("data", {}).get("prizeName", "未中奖")
-                self.log(f"沃云手机: 抽奖结果 - {prize}", notify=True)
-            else:
-                self.log(f"沃云手机: 抽奖失败 - {res.get('msg', str(res))}")
+            return self.session.get(url, headers=self.wostore_cloud_headers(user_token), timeout=WOSTORE_CLOUD_TIMEOUT).json()
         except Exception as e:
-            self.log(f"沃云手机: 抽奖异常 {e}")
+            self.log(f"沃云手机: 请求异常 {e}")
+            return {}
+
+    def wostore_cloud_bucp_post(self, path, user_token, payload=None):
+        url = f"https://uphone.wo-adv.cn/bucp{path}"
+        try:
+            return self.session.post(url, json=payload or {}, headers=self.wostore_cloud_headers(user_token), timeout=WOSTORE_CLOUD_TIMEOUT).json()
+        except Exception as e:
+            self.log(f"沃云手机: 请求异常 {e}")
+            return {}
+
+    def wostore_cloud_activity_post(self, path, payload, user_token="", label="云手机请求"):
+        url = f"https://uphone.wostore.cn{path}"
+        try:
+            return self.session.post(
+                url,
+                data=json.dumps(payload, ensure_ascii=False),
+                headers=self.wostore_cloud_activity_headers(user_token),
+                timeout=WOSTORE_CLOUD_TIMEOUT,
+            ).json()
+        except Exception as e:
+            self.log(f"沃云手机: {label}异常 {e}")
+            return {}
+
+    def wostore_cloud_user_info(self, cloud_token):
+        res = self.wostore_cloud_bucp_get("/servers/system/user/getAppUserInfo", cloud_token)
+        if str(res.get("code")) == "200":
+            data = res.get("data") or {}
+            name = data.get("nickName") or data.get("userName") or data.get("phoneNumber") or data.get("mobile")
+            if name:
+                self.log(f"沃云手机: 当前用户 {mask_str(name)}")
+        else:
+            self.log(f"沃云手机: 用户信息查询失败 - {res.get('msg') or pretty_json(res)}")
+        return res
+
+    def wostore_cloud_point_info(self, cloud_token):
+        res = self.wostore_cloud_bucp_get("/servers/order/user-point/point-info", cloud_token)
+        if str(res.get("code")) == "200":
+            data = res.get("data") or {}
+            point = data.get("balanceScoreNum") or data.get("totalPoint") or data.get("point") or data.get("availablePoint")
+            if point is not None:
+                self.log(f"沃云手机: 当前积分 {point}", notify=True)
+        else:
+            self.log(f"沃云手机: 积分查询失败 - {res.get('msg') or pretty_json(res)}")
+        return res
+
+    def wostore_cloud_sign(self, cloud_token):
+        res = self.session.post(
+            "https://h5forphone.wostore.cn/h5forphone/activity/signIn",
+            data=json.dumps({"accesstoken": cloud_token}),
+            headers=self.wostore_cloud_h5_headers(cloud_token),
+            timeout=WOSTORE_CLOUD_TIMEOUT,
+        ).json()
+        self.log(f"沃云手机: 签到：{res.get('msg', '未知')}", notify=True)
+        return res
+
+    def wostore_cloud_sign_rewards(self, cloud_token):
+        res = self.session.post(
+            "https://h5forphone.wostore.cn/h5forphone/activity/signInRightList",
+            data=json.dumps({"accesstoken": cloud_token}),
+            headers=self.wostore_cloud_h5_headers(cloud_token),
+            timeout=WOSTORE_CLOUD_TIMEOUT,
+        ).json()
+        for item in (res.get("data") or {}).get("goodsList", []):
+            if item.get("state") == "":
+                self.wostore_cloud_receive_sign_reward(cloud_token, item.get("name", ""), item.get("activityOrderId", ""))
+        return res
+
+    def wostore_cloud_receive_sign_reward(self, cloud_token, name, order_id):
+        payload = {"accesstoken": cloud_token, "activityOrderid": order_id, "account": "", "accountType": ""}
+        res = self.session.post(
+            "https://h5forphone.wostore.cn/h5forphone/activity/raffleSignIn",
+            data=json.dumps(payload),
+            headers=self.wostore_cloud_h5_headers(cloud_token),
+            timeout=WOSTORE_CLOUD_TIMEOUT,
+        ).json()
+        self.log(f"沃云手机: 领取{name}：{res.get('msg', '未知')}", notify=True)
+        return res
+
+    def wostore_cloud_activity_login(self, cloud_token, activity_code):
+        res = self.wostore_cloud_activity_post(
+            "/h5api/activity-service/user/login",
+            {"identityType": "cloudPhoneLogin", "code": cloud_token, "activityId": WOSTORE_CLOUD_LOGIN_ACTIVITY_ID, "device": "device"},
+            "",
+            "获取云任务token",
+        )
+        token = (res.get("data") or {}).get("user_token") or ""
+        if token:
+            self.log("沃云手机: 云任务Token获取成功")
+        else:
+            self.log(f"沃云手机: 云任务Token获取失败 - {res.get('msg') or pretty_json(res)}")
+        return token
+
+    def wostore_cloud_points_sign(self, user_token, sign_code):
+        if not sign_code:
+            return {}
+        res = self.wostore_cloud_activity_post(
+            "/h5api/activity-service/points/v1/sign",
+            {"activityCode": sign_code},
+            user_token,
+            "积分签到",
+        )
+        self.log(f"沃云手机: 积分签到：{res.get('msg', '未知')}", notify=True)
+        return res
+
+    def wostore_cloud_task_list(self, user_token, activity_code):
+        res = self.wostore_cloud_activity_post(
+            "/h5api/activity-service/user/task/list",
+            {"activityCode": activity_code},
+            user_token,
+            "查询任务列表",
+        )
+        data = res.get("data") or {}
+        task_list = data.get("taskList") or data.get("list") or data.get("tasks") or res.get("taskList") or []
+        self.log(f"沃云手机: 活动[{activity_code}]查询到 {len(task_list)} 个任务")
+        if not task_list:
+            self.log(f"沃云手机: 活动[{activity_code}]无可执行任务 - {response_summary(res)}")
+            return res
+        done = 0
+        for task in task_list:
+            name = task.get("taskName", "未知任务")
+            code = task.get("taskCode", "")
+            status = str(task.get("status") or task.get("taskStatus") or task.get("state") or "").upper()
+            if status in {"OBTAINED", "RECEIVED", "FINISHED", "DONE"}:
+                done += 1
+                self.log(f"沃云手机: 已完成[{name}]")
+            elif status in {"UNCLAIMED", "CLAIMABLE", "COMPLETED", "FINISH"}:
+                self.log(f"沃云手机: 领取[{name}]奖励")
+                self.wostore_cloud_receive_task(user_token, activity_code, code)
+            else:
+                self.log(f"沃云手机: 执行[{name}] 状态 {status or '未知'}")
+                self.wostore_cloud_finish_task(user_token, activity_code, task)
+        self.log(f"沃云手机: 活动[{activity_code}]执行前已完成 {done}/{len(task_list)} 个任务")
+        return res
+
+    def wostore_cloud_finish_task(self, user_token, activity_code, task):
+        task_code = task.get("taskCode", "")
+        task_name = task.get("taskName") or task.get("taskDesc") or task_code
+        log_code_map = {
+            "0127-006": "012-4",
+        }
+        res = self.wostore_cloud_activity_post(
+            "/h5api/activity-service/user/task/logs",
+            {
+                "logType": "01",
+                "logCode": log_code_map.get(task_code, task_code),
+                "logSource": "01",
+                "logDetail": task_name,
+            },
+            user_token,
+            "完成任务",
+        )
+        self.log(f"沃云手机: 任务状态：{res.get('msg', '未知')}")
+        time.sleep(2)
+        self.wostore_cloud_receive_task(user_token, activity_code, task_code)
+        return res
+
+    def wostore_cloud_receive_task(self, user_token, activity_code, task_code):
+        res = self.wostore_cloud_activity_post(
+            "/h5api/activity-service/user/task/raffle/get",
+            {"activityCode": activity_code, "taskCode": task_code},
+            user_token,
+            "领取任务奖励",
+        )
+        self.log(f"沃云手机: 奖励领取结果：{res.get('msg', '未知')}", notify=True)
+        return res
+
+    def wostore_cloud_lottery_count(self, user_token, activity_code):
+        res = self.wostore_cloud_activity_post(
+            "/h5api/activity-service/user/task/list",
+            {"activityCode": activity_code},
+            user_token,
+            "查询抽奖次数",
+        )
+        data = res.get("data") or {}
+        count = int(data.get("rafflesLeftCount") or data.get("raffleLeftCount") or data.get("lotteryLeftCount") or res.get("rafflesLeftCount") or res.get("raffleLeftCount") or 0)
+        self.log(f"沃云手机: 活动[{activity_code}]剩余抽奖次数：{count}")
+        return count
+
+    def wostore_cloud_draw(self, user_token, activity_code):
+        res = self.wostore_cloud_activity_post(
+            "/h5api/activity-service/lottery",
+            {"activityCode": activity_code},
+            user_token,
+            "抽奖",
+        )
+        prize = (res.get("data") or {}).get("prizeName") or res.get("msg") or "未知奖励"
+        self.log(f"沃云手机: 抽奖获得：{prize}", notify=True)
+        return res
+
+    def wostore_cloud_device_status(self, cloud_token):
+        res = self.wostore_cloud_bucp_get("/servers/resource/instance/list?pageNum=1&pageSize=200", cloud_token)
+        rows = res.get("rows") or (res.get("data") or {}).get("rows") or []
+        for device in rows:
+            device_id = device.get("id") or device.get("deviceId") or ""
+            status = device.get("status", "?")
+            if status == "running":
+                self.log("沃云手机: 设备运行正常")
+            elif status == "pre_create":
+                self.wostore_cloud_device_action(cloud_token, "/servers/resource/instance/cpInstanceAction", {"action": "allot", "cpInstanceId": device_id}, "激活设备")
+            else:
+                self.wostore_cloud_device_action(cloud_token, "/servers/resource/backup/recover", {"cpInstanceId": device_id}, "恢复设备")
+        return res
+
+    def wostore_cloud_device_action(self, cloud_token, path, payload, label):
+        res = self.wostore_cloud_bucp_post(path, cloud_token, payload)
+        self.log(f"沃云手机: {label}结果：{res.get('msg', '未知')}")
+        return res
 
     def wostore_cloud_task(self, is_query_only=False):
         self.log("==== 沃云手机 ====")
         if is_query_only:
              self.log("沃云手机: [查询模式] 此平台暂无资产或余额可供查询", notify=True)
              return
-        target_url = "https://h5forphone.wostore.cn/cloudPhone/dialogCloudPhone.html?channel_id=ST-Zujian001-gs&cp_id=91002997"
-        ticket_res = self.openPlatLineNew(target_url)
-        if not ticket_res:
-            self.log("沃云手机: 获取入口 Ticket 失败")
-            return
-        ticket = ticket_res
-        if isinstance(ticket, dict):
-            ticket = ticket.get('ticket')
+        ticket = self.wostore_cloud_get_ticket()
         if not ticket:
              self.log("沃云手机: 获取入口 Ticket 失败 (为空)")
              return
@@ -5508,14 +5870,23 @@ class UserService:
         if not tokens:
             self.log("沃云手机: 登录失败，跳过后续任务")
             return
-        user_token = tokens['user_token']
-        self.wostore_cloud_sign(user_token)
-        time.sleep(2)
-        self.wostore_cloud_task_list(user_token)
-        time.sleep(1)
-        self.wostore_cloud_get_chance(user_token, "2508-01")
-        time.sleep(2)
-        self.wostore_cloud_draw(user_token)
+        cloud_token = tokens["cloud_token"]
+        self.wostore_cloud_user_info(cloud_token)
+        self.wostore_cloud_sign(cloud_token)
+        time.sleep(3)
+        self.wostore_cloud_sign_rewards(cloud_token)
+        for activity_code in WOSTORE_CLOUD_ACTIVITY_CODES:
+            user_token = self.wostore_cloud_activity_login(cloud_token, activity_code)
+            if not user_token:
+                continue
+            self.wostore_cloud_points_sign(user_token, WOSTORE_CLOUD_SIGN_CODE)
+            self.wostore_cloud_task_list(user_token, activity_code)
+            for lottery_code in WOSTORE_CLOUD_LOTTERY_CODES:
+                for _ in range(self.wostore_cloud_lottery_count(user_token, lottery_code)):
+                    self.wostore_cloud_draw(user_token, lottery_code)
+                    time.sleep(3)
+        self.wostore_cloud_point_info(cloud_token)
+        self.wostore_cloud_device_status(cloud_token)
 
     def regional_task(self, is_query_only=False):
         """区域专区任务入口"""
@@ -6716,6 +7087,7 @@ class UserService:
         self.log("==== 签到区 ====")
         self.sign_getTelephone(is_initial=True)
         self.sign_getContinuous(is_query_only=False)
+        self.sign_month_sign_gift()
         self.sign_getTaskList()
         sc = globalConfig.get("sign_config", {})
         if sc.get("run_grab_coupon", False):
@@ -6733,6 +7105,7 @@ class UserService:
                 if globalConfig.get("enable_sign", True):
                     try:
                         self.sign_getContinuous(is_query_only=True)
+                        self.sign_month_sign_gift(is_query_only=True)
                         self.sign_getTelephone()
                     except Exception as e:
                         self.log(f"首页签到查询异常: {e}")
@@ -6893,7 +7266,7 @@ def do_notify(users):
         content = "\n".join(notify_content)
         try:
             from notify import send
-            send("中国联通", content)
+            send(f"中国联通 {SCRIPT_VERSION}", content)
             print(f"推送成功 (内容长度: {len(content)})")
         except Exception as e:
             print(f"推送失败，可能未配置 notify.py: {str(e)}")
@@ -6902,7 +7275,7 @@ def do_notify(users):
 
 def main():
     global GRAB_AMOUNT
-    print(f"[{datetime.now().strftime('%H:%M:%S')}] [Script Start] chinaUnicom Python v1.0.9")
+    print(f"[{datetime.now().strftime('%H:%M:%S')}] [Script Start] chinaUnicom Python {SCRIPT_VERSION}")
     cookies = os.environ.get("chinaUnicomCookie", "")
     if not cookies:
         print("[-] 未在环境变量 chinaUnicomCookie 中找到配置")
@@ -7003,14 +7376,7 @@ def main():
 
         def run_grab_task(u):
             u.configure_proxy()
-            if not u.token_online and u.account_mobile:
-                u.load_token_from_cache()
-            is_valid = u.onLine()
-            if not is_valid and u.account_mobile and u.account_password:
-                u.unicom_login()
-                is_valid = u.onLine()
-            if is_valid:
-                u.save_token_to_cache()
+            if u.ensure_login():
                 sub_futures = []
                 with ThreadPoolExecutor(max_workers=2) as sub_executor:
                     if sc.get("run_grab_coupon", False) and globalConfig.get("enable_sign", True):
@@ -7041,12 +7407,7 @@ def main():
         print("")
         print(f"🔄 正在初始化账号[{u.index}]...")
         u.configure_proxy()
-        if not u.token_online and u.account_mobile:
-            u.load_token_from_cache()
-        if not u.token_online and u.account_mobile and u.account_password:
-             u.unicom_login()
-        if u.onLine():
-             u.save_token_to_cache()
+        if u.ensure_login():
              print("")
              print(f"------------------ 账号[{u.index}][{mask_str(u.account_mobile)}] ------------------")
              print("")
@@ -7059,3 +7420,6 @@ def main():
     do_notify(users)
 if __name__ == "__main__":
     main()
+
+
+
