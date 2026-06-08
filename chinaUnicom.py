@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-中国联通 Python 版 v1.1.0
+中国联通 Python 版 v1.1.1
 
 包含以下功能:
 1. 首页签到 (话费红包/积分)
@@ -8,13 +8,19 @@
 3. 天天领现金 (每日打卡/立减金)
 4. 权益超市 (任务/抽奖/浇水/领奖/全局库存缓存)
 5. 安全管家 (日常任务/积分领取)
-6. 联通云盘 (签到/AI互动/文件上传/抽奖活动/重复清理)
+6. 联通云盘 (乘风活动/重复清理)
 7. 联通阅读 (自动获取书籍/心跳阅读/抽奖/查红包)
 8. 联通爱听 (JF积分任务/自动签到/任务完成/积分查询)
 9. 沃云手机 (签到/任务/抽奖)
 10. 区域专区 (自动识别安徽超级星期五/辽宁福利魔方/新疆/河南/云南执行特有任务)
 
 更新说明:
+
+### 20260607
+v1.1.1:
+- 沃云手机：更新积分抽奖逻辑，兼容商品列表响应并避免重复执行。
+- 联通云盘：新增乘风活动，支持云盘授权登录、AI互动、视频转存、芒果任务、抽奖及前端状态同步。
+- 联通云盘：精简旧积分任务，仅保留乘风活动与重复文件清理。
 
 ### 20260526
 v1.1.0:
@@ -28,23 +34,6 @@ v1.0.9:
 - 云盘：新增抽奖记录查询，优化推送内容。
 - 云盘：移除过期拼图、家乡活动。
 - 推送：新增通知开关。
-
-### 20260426
-v1.0.8:
-- 通通乡村：新增任务模块，支持签到、浏览、垃圾分类与农场任务。
-- 通通乡村：补充农场新手任务，防卡死处理。
-- 云智手机：更新活动code。
-
-### 20260331
-v1.0.7:
-- 区域专区：新增安徽联通"超级星期五"抢红包，支持自定义面额。
-- 联通爱听：修复积分弹窗空响应导致脚本崩溃。
-
-### 20260326
-v1.0.6:
-- 区域专区：新增辽宁联通"福利魔方"自动化签到与资产明细展示。
-- 安全管家：重构接入最新多类拦截选项及助手安全积分获取通道。
-- 权益超市：增加查抢话费记录 `receiveTime` 空值防报错处理。
 
 配置说明:
 1. 账号变量 (chinaUnicomCookie):
@@ -73,7 +62,7 @@ v1.0.6:
 
 From: YaoHuo8648
 Email: zheyizzf@188.com
-Update: 2026.05.26
+Update: 2026.06.07
 """
 import os
 import sys
@@ -88,7 +77,6 @@ import logging
 import requests
 import uuid
 import string
-import tempfile
 from datetime import datetime
 try:
     sys.stdout.reconfigure(encoding='utf-8')
@@ -100,7 +88,7 @@ from requests.packages.urllib3.util.retry import Retry
 from Crypto.Cipher import AES, PKCS1_v1_5
 from Crypto.PublicKey import RSA
 from Crypto.Util.Padding import pad, unpad
-SCRIPT_VERSION = "v1.1.0"
+SCRIPT_VERSION = "v1.1.1"
 # ========================================
 # 全局配置 (globalConfig)
 # true=开启, false=关闭
@@ -163,8 +151,6 @@ XJ_USER_AGENT = os.environ.get(
     "Mozilla/5.0 (iPhone; CPU iPhone OS 16_2 like Mac OS X) AppleWebKit/605.1.15 "
     "(KHTML, like Gecko) Mobile/15E148 unicom{version:iphone_c@12.0701};ltst;OSVersion/16.2"
 )
-UNICOM_CLOUD_UPLOAD_TIMEOUT = int(os.environ.get("UNICOM_CLOUD_UPLOAD_TIMEOUT", "120") or "120")
-UNICOM_CLOUD_UPLOAD_PROGRESS_BYTES = int(os.environ.get("UNICOM_CLOUD_UPLOAD_PROGRESS_BYTES", "6376590") or "6376590")
 WOCARE_CONSTANTS = {
 	"serviceLife": "wocareMBHServiceLife1",
 	"anotherApiKey": "beea1c7edf7c4989b2d3621c4255132f",
@@ -194,6 +180,13 @@ YUNNAN_LIFE_TASKS = [
     {"taskName": "每日签到", "taskCode": "DAILY_SIGN"},
     {"taskName": "浏览年终大回馈,好礼多多", "taskCode": "BROWSE_5TOWNS"},
 ]
+YPHD_ACTIVITY_ID = "Mjg="
+YPHD_SECRET_KEY = "s8Hf3LqP9xN2vM5bR7tY1wZ4cA6eG0K"
+YPHD_MOVE_FILE_FID = "pNKsm_lDq4EJWsx1rFMP/uVX7f1Gbu4K4uDaFJepfssdrGui4u/poSDp/vKG21xEIiBk//"
+YPHD_MOVE_FILE_NAME = "乘风2026精彩时刻-雨爱.mp4"
+YPHD_MGTV_BASE = "https://mgcact.api.mgtv.com"
+YPHD_MGTV_TEMPLATE_ID = "2053018128116371456"
+YPHD_MGTV_IMG_URL = "I3Hs2_UOeOF47btwtvvHtdMpGNp8hj79VCXTyxlsogqxXP2pF+mhqibyhxm6Ux53GzjJ0v"
 TTXC_BASE_URL = "https://epay.10010.com/cu-ca-game-front"
 TTXC_APP_BASE_URL = "https://epay.10010.com/cu-ca-app-front"
 TTXC_CHANNEL = "225"
@@ -212,10 +205,13 @@ WOSTORE_CLOUD_SIGN_CODE = os.environ.get("UNICOM_WOSTORE_SIGN_CODE", "Points_Sig
 WOSTORE_CLOUD_LOGIN_ACTIVITY_ID = os.environ.get("UNICOM_WOSTORE_LOGIN_ACTIVITY_ID", "HD2026033000125")
 WOSTORE_CLOUD_ACTIVITY_CODES = [x.strip() for x in os.environ.get("UNICOM_WOSTORE_ACTIVITY_CODES", "Points_Obtain_2507,Points_Obtain_2506,Points_Obtain_2505,Points_Obtain_2504").split(",") if x.strip()]
 WOSTORE_CLOUD_LOTTERY_CODES = [x.strip() for x in os.environ.get("UNICOM_WOSTORE_LOTTERY_CODES", "Points_Obtain_2507,Points_Obtain_2506,Points_Obtain_2505,Points_Obtain_2504").split(",") if x.strip()]
+WOSTORE_POINTS_ACT_CODE = os.environ.get("UNICOM_WOSTORE_POINTS_ACT_CODE", "Points_Exchange_2507")
+WOSTORE_POINTS_GOODS_ID_10 = os.environ.get("UNICOM_WOSTORE_POINTS_GOODS_ID_10", "2026031010")
+WOSTORE_POINTS_GOODS_ID_1 = os.environ.get("UNICOM_WOSTORE_POINTS_GOODS_ID_1", "2026031001")
+WOSTORE_POINTS_STOP_PRIZE = os.environ.get("UNICOM_WOSTORE_POINTS_STOP_PRIZE", "7天体验卡")
+WOSTORE_POINTS_MAX_DRAW = max(int(os.environ.get("UNICOM_WOSTORE_POINTS_MAX_DRAW", "1") or "1"), 0)
 WOSTORE_CLOUD_TIMEOUT = int(os.environ.get("UNICOM_WOSTORE_TIMEOUT", "15") or "15")
 WOSTORE_CLOUD_RETRIES = int(os.environ.get("UNICOM_WOSTORE_RETRIES", "3") or "3")
-CLOUD_SPEED_ACTIVITY_ID = "Mjc="
-CLOUD_SPEED_TEAM_CONTEXT = {}
 UNICOM_TOKEN_CACHE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "unicom_token_cache.json")
 LOGIN_PUB_KEY = """-----BEGIN PUBLIC KEY-----
 MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDc+CZK9bBA9IU+gZUOc6FUGu7yO9WpTNB0PzmgFBh96Mg1WrovD1oqZ+eIF4LjvxKXGOdI79JRdve9NPhQo07+uqGQgE4imwNnRx7PFtCRryiIEcUoavuNtuRVoBAm6qdB0SrctgaqGfLgKvZHOnwTjyNqjBUxzMeQlEC2czEMSwIDAQAB
@@ -312,6 +308,8 @@ class FailoverSession:
         return self.request("POST", url, **kwargs)
 
 class UserService:
+    wocare_available = True
+
     def __init__(self, index, config_str):
         self.index = index
         self.valid = False
@@ -1198,6 +1196,8 @@ class UserService:
                     self.log("联通祝福: 没有获取到location")
             else:
                 self.log(f"联通祝福: 获取sid失败[{res.status_code}]")
+        except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as ce:
+            self.log("联通祝福: 连接wocare服务失败，可能服务已关闭或网络不可达")
         except Exception as e:
             self.log(f"wocare_getToken 异常: {str(e)}")
         return False
@@ -2045,136 +2045,12 @@ class UserService:
     def init_cloud_urls(self):
         if not hasattr(self, 'cloudDiskUrls'):
             self.cloudDiskUrls = {
-                'onLine': "https://m.client.10010.com/mobileService/onLine.htm",
                 'getTicketByNative': "https://m.client.10010.com/edop_ng/getTicketByNative",
-                'userticket': "https://panservice.mail.wo.cn/api-user/api/user/ticket",
                 'ltypDispatcher': "https://panservice.mail.wo.cn/wohome/dispatcher",
-                'query': "https://m.jf.10010.com/jf-external-application/page/query",
-                'taskDetail': "https://m.jf.10010.com/jf-external-application/jftask/taskDetail",
-                'taskRecords': "https://m.jf.10010.com/jf-external-application/jftask/taskRecords",
-                'dosign': "https://m.jf.10010.com/jf-external-application/jftask/sign",
-                'upload2C': "https://tjupload.pan.wo.cn/openapi/client/upload2C",
-                'doPopUp': "https://m.jf.10010.com/jf-external-application/jftask/popUp",
-                'toFinish': "https://m.jf.10010.com/jf-external-application/jftask/toFinish",
-                'lottery': "https://panservice.mail.wo.cn/activity/lottery",
-                'userInfo': "https://m.jf.10010.com/jf-external-application/jftask/userInfo",
-                'ai_query': "https://panservice.mail.wo.cn/wohome/ai/assistant/query",
-                'lottery_times': "https://panservice.mail.wo.cn/activity/lottery/lottery-times",
-                'lottery_record': "https://panservice.mail.wo.cn/activity/lottery/recordList",
-                'speed_team_create': "https://panservice.mail.wo.cn/activity/team/createTeam",
-                'speed_team_token': "https://panservice.mail.wo.cn/activity/team/generateUserTeamToken",
-                'speed_team_join': "https://panservice.mail.wo.cn/activity/team/joinTeam",
-                'speed_team_member': "https://panservice.mail.wo.cn/activity/teamMember/isUserInTeam",
-                'speed_task_activate': "https://panservice.mail.wo.cn/activity/task/activate",
-                'aiMoveFile': "https://panservice.mail.wo.cn/wohome/open/v1/ai/moveFile2SystemFolder",
                 'getScanState': "https://s.pan.wo.cn/wohome/intelligentClean/getScanStateAndResult",
                 'getCleanData': "https://s.pan.wo.cn/wohome/intelligentClean/getCleanData",
                 'batchClean': "https://s.pan.wo.cn/wohome/intelligentClean/batchClean",
-                'secretKey': "https://m.jf.10010.com/jf-external-application/jftask/getSecretKey",
-                'taskFinish': "https://panservice.mail.wo.cn/activity/member-point/v1/task/finish",
             }
-
-    def cloudRequest(self, url_name, payload, is_changer=False, method='post', custom_headers=None):
-        self.init_cloud_urls()
-        url = self.cloudDiskUrls.get(url_name)
-        if not url:
-            self.log(f"云盘无效的URL名称: {url_name}")
-            return {'result': None, 'headers': None}
-        headers = {
-            'User-Agent': "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 unicom{version:iphone_c@12.0301}",
-            'Connection': "Keep-Alive",
-            'Accept-Encoding': "gzip",
-        }
-        if custom_headers:
-             headers.update(custom_headers)
-        if url_name in ['dosign', 'userInfo', 'doPopUp', 'toFinish', 'taskDetail', 'taskRecords']:
-            if not getattr(self.cloudDisk, 'userticket', None):
-                self.log(f"云盘 [{{url_name}}] userticket 未获取")
-                return {'result': None, 'headers': None}
-            headers['ticket'] = self.cloudDisk.userticket
-            headers['content-type'] = "application/json;charset=UTF-8"
-            headers['partnersid'] = "1649"
-            headers['origin'] = "https://m.jf.10010.com"
-            if getattr(self.cloudDisk, 'jeaId', None):
-                headers['Cookie'] = f"_jea_id={self.cloudDisk.jeaId};"
-            if url_name in ['dosign', 'toFinish']:
-                sig_headers = self.build_signature_headers_cloud()
-                if sig_headers:
-                    headers.update(sig_headers)
-            if is_changer:
-                headers['clienttype'] = "yunpan_unicom_applet"
-                headers['x-requested-with'] = "com.sinovatech.unicom.ui"
-                if url_name == 'toFinish':
-                    headers['User-Agent'] = "Mozilla/5.0 (Linux; Android 12; Redmi K30 Pro Build/SKQ1.220303.001; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/131.0.6778.39 Mobile Safari/537.36/woapp LianTongYunPan/4.0.4 (Android 12)"
-                    headers['clienttype'] = "yunpan_android"
-                    headers['x-requested-with'] = "com.chinaunicom.bol.cloudapp"
-            else:
-                headers['clienttype'] = "yunpan_android"
-                headers['x-requested-with'] = "com.sinovatech.unicom.ui"
-        elif url_name == 'ai_query':
-             model_id = payload.get('modelId', 1)
-             headers.update({
-                'accept': 'text/event-stream',
-                'X-YP-Access-Token': self.cloudDisk.userToken,
-                'X-YP-App-Version': '5.0.12',
-                'X-YP-Client-Id': '1001000035',
-                'User-Agent': 'Mozilla/5.0 (Linux; Android 9; SM-N9810 Build/PQ3A.190705.11211540; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/91.0.4472.114 Mobile Safari/537.36/woapp LianTongYunPan/5.0.12 (Android 9)',
-                'Content-Type': 'application/json',
-                'Origin': 'https://panservice.mail.wo.cn',
-                'X-Requested-With': 'com.chinaunicom.bol.cloudapp',
-                'Referer': f"https://panservice.mail.wo.cn/h5/wocloud_ai/?modelType={model_id}&clientId=1001000035&touchpoint=300300010001&token={self.cloudDisk.userToken}",
-             })
-        elif url_name == 'lottery_times':
-             method = 'get'
-             headers.update({
-                 'X-YP-Access-Token': self.cloudDisk.userToken, 'source-type': 'woapi', 'clientId': '1001000165',
-                 'token': self.cloudDisk.userToken, 'X-YP-Client-Id': '1001000165',
-             })
-        elif url_name == 'aiMoveFile':
-             headers.update({
-                 'X-YP-Device-Id': 'yOH1Y2/Ck5tBHRRBEAPCoGRGBOHCob7I',
-                 'app-type': 'liantongyunpanapp',
-                 'Access-Token': self.cloudDisk.userToken,
-                 'Client-Id': '1001000035',
-                 'App-Version': 'yp-app/5.1.0',
-                 'Sys-Version': 'Android/15',
-                 'User-Agent': 'LianTongYunPan/5.1.0 (Android 15)',
-                 'X-YP-Client-Id': '1001000035',
-                 'X-YP-Access-Token': self.cloudDisk.userToken,
-                 'oaid': '00000000',
-                 'Content-Type': 'application/json;charset=utf-8',
-                 'Origin': 'https://panservice.mail.wo.cn',
-             })
-        for attempt in range(1, 4):
-            try:
-                if method == 'get':
-                    res = self.session.get(url, params=payload, headers=headers, timeout=15)
-                else:
-                    res = self.session.post(url, json=payload, headers=headers, timeout=15)
-                if url_name == 'ai_query':
-                     return {'result': None, 'body': res.text, 'headers': res.headers}
-                try:
-                    res_json = res.json()
-                    return {'result': res_json, 'headers': res.headers, 'status': res.status_code}
-                except:
-                    return {'result': res.text, 'headers': res.headers, 'status': res.status_code}
-            except Exception as e:
-                err_msg = str(e)
-                if attempt < 3 and os.environ.get("UNICOM_PROXY_API") and ("Max retries exceeded" in err_msg or "timed out" in err_msg.lower() or "connection" in err_msg.lower() or "SOCKS" in err_msg):
-                    self.log(f"cloudRequest [{url_name}] 网络异常触发故障转移({err_msg}), 正在更换代理...")
-                    self.failover_proxy()
-                    continue
-                if attempt == 3:
-                     self.log(f"cloudRequest Exception [{url_name}]: {e}")
-                     return {'result': None, 'headers': None, 'status': 599}
-                self.log(f"cloudRequest [{url_name}] 网络异常({e}), 重试第{attempt}次...")
-                time.sleep(2)
-
-    def encrypt_data_cloud(self, data, key, iv="wNSOYIB1k1DjY5lA"):
-        key_padded = key.ljust(16)[:16]
-        cipher = AES.new(key_padded.encode(), AES.MODE_CBC, iv.encode())
-        padded = pad(data.encode(), AES.block_size, style="pkcs7")
-        return base64.b64encode(cipher.encrypt(padded)).decode()
 
     def getTicketByNative_cloud(self):
         for attempt in range(1, 4):
@@ -2239,427 +2115,8 @@ class UserService:
                  time.sleep(2)
         return None
 
-    def get_userticket_cloud(self, is_changer=False):
-        if not getattr(self.cloudDisk, 'userToken', None):
-            self.log("云盘任务: 获取userticket失败, userToken未获取")
-            return None
-        headers = {}
-        if is_changer:
-            headers = {
-                'User-Agent': "LianTongYunPan/4.0.4 (Android 12)",
-                'app-type': "liantongyunpanapp",
-                'Client-Id': "1001000035",
-                'App-Version': "yp-app/4.0.4",
-                'Sys-Version': "Android/12",
-                'X-YP-Client-Id': "1001000035",
-                'X-YP-Access-Token': self.cloudDisk.userToken,
-            }
-        else:
-             headers = {
-                'User-Agent': "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 unicom{version:iphone_c@12.0301}",
-                'Content-Type': 'application/json',
-                'X-YP-Access-Token': self.cloudDisk.userToken,
-                'accesstoken': self.cloudDisk.userToken,
-                'token': self.cloudDisk.userToken,
-                'clientId': "1001000003",
-                'X-YP-Client-Id': "1001000003",
-                'source-type': "woapi",
-                'app-type': "unicom"
-             }
-        for attempt in range(1, 4):
-            try:
-                 res = self.session.post(self.cloudDiskUrls['userticket'], json={}, headers=headers, timeout=15).json()
-                 if res and isinstance(res, dict) and res.get('result', {}).get('ticket'):
-                     self.cloudDisk.userticket = res['result']['ticket']
-                     return self.cloudDisk.userticket
-                 else:
-                     self.log(f"get_userticket_cloud failed: {res}")
-                     return None
-            except Exception as e:
-                 self.log(f"[get_userticket_cloud] 请求异常[{e}]，重试第{attempt}次")
-                 time.sleep(2)
-        return None
-
-    def get_userInfo_cloud(self):
-        if not self.get_userticket_cloud(False): return
-        data = self.cloudRequest('userInfo', {}, False, 'post')
-        res = data.get('result')
-        headers = data.get('headers')
-        if headers:
-            cookie = headers.get('Set-Cookie', '')
-            match = re.search(r'_jea_id=([^;]+)', cookie)
-            if match:
-                self.cloudDisk.jeaId = match.group(1)
-        if res and res.get('data'):
-             avail = res['data'].get('availableScore')
-             today_earn = res['data'].get('todayEarnScore', 0)
-             if not hasattr(self.cloudDisk, 'initial_avail'):
-                 self.cloudDisk.initial_avail = avail
-                 self.log(f"云盘任务: 运行前 - 今日已赚: {today_earn}, 可用积分: {avail}")
-             else:
-                 earned = int(avail) - int(self.cloudDisk.initial_avail)
-                 self.log(f"云盘任务: 运行后 - 今日已赚: {today_earn}, 可用: {avail}, 本次获得: {earned}", notify=True)
-
-    def do_ai_interaction_cloud(self, taskCode, taskName):
-        self.log(f"云盘任务: 执行AI通通查询请求...")
-        payload = {
-          "input": "你好",
-          "platform": 2,
-          "modelId": 0,
-          "tag": 21,
-          "subTag": 210000,
-          "conversationId": "",
-          "knowledgeId": "",
-          "referFileInfo": []
-        }
-        data = self.cloudRequest('ai_query', payload, False, 'post')
-        body = data.get('body', '')
-        if body and ('"finish":1' in body or 'success' in body):
-             self.log(f"云盘任务: ✅ [{taskName}] 互动成功")
-             self.doPopUp_cloud(taskCode, taskName, False)
-             return True
-        self.log(f"云盘任务: ❌ [{taskName}] 互动失败")
-        return False
-
-    def get_cloud_upload_file_path(self):
-        custom_path = os.environ.get("UNICOM_CLOUD_UPLOAD_FILE", "").strip()
-        if custom_path:
-            full_path = os.path.abspath(custom_path)
-            if os.path.isfile(full_path):
-                return full_path
-            self.log(f"云盘任务: 上传文件不存在: {full_path}")
-            return None
-        seed_path = os.path.join(tempfile.gettempdir(), "unicom_cloud_upload_seed.jpg")
-        target_size = max(UNICOM_CLOUD_UPLOAD_PROGRESS_BYTES, 1024)
-        if not os.path.exists(seed_path) or os.path.getsize(seed_path) != target_size:
-            seed_bytes = base64.b64decode("/9j/4AAQSkZJRgABAQAAAQABAAD/2wCEAAkGBxAQEBAQEBAPEA8PEA8QDw8PDw8QDw8QFREWFhURFRUYHSggGBolGxUVITEhJSkrLi4uFx8zODMsNygtLisBCgoKDg0OGxAQGy0lICYtLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLf/AABEIAAEAAgMBIgACEQEDEQH/xAAXAAADAQAAAAAAAAAAAAAAAAAAAQID/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAwDAQACEAMQAAAB6A//xAAXEAEAAwAAAAAAAAAAAAAAAAABAAIR/9oACAEBAAEFAkqf/8QAFBEBAAAAAAAAAAAAAAAAAAAAEP/aAAgBAwEBPwEf/8QAFBEBAAAAAAAAAAAAAAAAAAAAEP/aAAgBAgEBPwEf/8QAFBABAAAAAAAAAAAAAAAAAAAAEP/aAAgBAQAGPwJf/8QAFBABAAAAAAAAAAAAAAAAAAAAEP/aAAgBAQABPyFf/9k=")
-            with open(seed_path, "wb") as f:
-                f.write(seed_bytes)
-                if target_size > len(seed_bytes):
-                    f.seek(target_size - 1)
-                    f.write(b"\0")
-        return seed_path
-
-    def get_cloud_upload_progress_bytes(self, file_size=0):
-        progress_bytes = max(int(UNICOM_CLOUD_UPLOAD_PROGRESS_BYTES or 0), 1)
-        if file_size and int(file_size) > 0:
-            return min(int(file_size), progress_bytes)
-        return progress_bytes
-
-    def parse_cloud_size_to_bytes(self, value):
-        match = re.search(r'(\d+(?:\.\d+)?)\s*([KMGT])', str(value).upper())
-        if not match:
-            return 0
-        unit_power = {'K': 1, 'M': 2, 'G': 3, 'T': 4}
-        return int(float(match.group(1)) * (1024 ** unit_power[match.group(2)]))
-
-    def get_cloud_upload_times(self, task, file_size):
-        progress_list = task.get('taskExtend', {}).get('taskProgressVOList', []) or []
-        targets = []
-        for item in progress_list:
-            size_bytes = self.parse_cloud_size_to_bytes(item.get('progressName'))
-            if size_bytes > 0:
-                targets.append(size_bytes)
-        finished = max(int(task.get('finishCount', 0) or 0), 0)
-        stage_goal = finished + 1
-        progress_bytes = self.get_cloud_upload_progress_bytes(file_size)
-        if targets:
-            stage_goal = min(stage_goal, len(targets))
-            final_target = targets[stage_goal - 1]
-            completed_target = targets[min(finished, len(targets)) - 1] if finished > 0 else 0
-            remaining_bytes = max(final_target - completed_target, 0)
-            if remaining_bytes <= 0:
-                return 0, stage_goal
-            return max((remaining_bytes + progress_bytes - 1) // progress_bytes, 1), stage_goal
-        required = max(int(task.get('needCount', 0) or 0), 0)
-        if required > 0:
-            stage_goal = min(stage_goal, required)
-        remaining = max(stage_goal - finished, 0)
-        return remaining, stage_goal
-
-    def query_cloud_task_list_cloud(self):
-        if not self.get_userticket_cloud(False):
-            return []
-        data = self.cloudRequest('taskDetail', {}, False, 'post')
-        if not isinstance(data, dict):
-            self.log("云盘任务: taskDetail 返回结构异常，已跳过本轮任务列表")
-            return []
-        res = data.get('result')
-        if not isinstance(res, dict):
-            body = str(res).replace('\r', ' ').replace('\n', ' ').strip()[:120]
-            self.log(f"云盘任务: taskDetail 返回异常，已跳过本轮任务列表 (status={data.get('status')}, body={body or 'None'})")
-            return []
-        task_detail = res.get('data', {}).get('taskDetail', {})
-        if not isinstance(task_detail, dict):
-            self.log("云盘任务: taskDetail 数据结构异常，已跳过本轮任务列表")
-            return []
-        return task_detail.get('taskList', []) or []
-
-    def query_task_records_cloud(self, cursor=""):
-        if not self.get_userticket_cloud(False):
-            return []
-        data = self.cloudRequest('taskRecords', {"cursor": cursor}, False, 'post')
-        if not isinstance(data, dict):
-            self.log("云盘任务: taskRecords 返回结构异常，已跳过积分明细查询")
-            return []
-        res = data.get('result')
-        if not isinstance(res, dict):
-            body = str(res).replace('\r', ' ').replace('\n', ' ').strip()[:120]
-            self.log(f"云盘任务: taskRecords 返回异常，已跳过积分明细查询 (status={data.get('status')}, body={body or 'None'})")
-            return []
-        return res.get('data', []) or []
-
-    def init_cloud_task_records_state(self):
-        records = self.query_task_records_cloud("")
-        self.cloudDisk.knownTaskRecordIds = {str(item.get('id')) for item in records if item.get('id')}
-
-    def match_new_cloud_task_record(self, task_name, before_ids=None):
-        records = self.query_task_records_cloud("")
-        known_ids = set(before_ids if before_ids is not None else getattr(self.cloudDisk, 'knownTaskRecordIds', set()))
-        new_record = None
-        for item in records:
-            record_id = str(item.get('id') or '')
-            if not record_id or record_id in known_ids:
-                continue
-            if item.get('taskName') == task_name and not new_record:
-                new_record = item
-            known_ids.add(record_id)
-        self.cloudDisk.knownTaskRecordIds = known_ids
-        return new_record
-
-    def get_cloud_task_by_code_cloud(self, task_code):
-        if not task_code:
-            return None
-        for task in self.query_cloud_task_list_cloud():
-            if task.get('taskCode') == task_code:
-                return task
-        return None
-
-    def finalize_generic_task_cloud(self, task_code, task_name):
-        current_task = self.get_cloud_task_by_code_cloud(task_code)
-        if not isinstance(current_task, dict):
-            return
-        finish_text = current_task.get('finishText')
-        finished = int(current_task.get('finishCount', 0) or 0)
-        required = int(current_task.get('needCount', 0) or 0)
-        if finish_text == "待领取":
-            self.doPopUp_cloud(task_code, task_name, False)
-            return
-        if finish_text in ["已完成", "已领取"] or (required > 0 and finished >= required):
-            record = self.match_new_cloud_task_record(task_name)
-            if record:
-                self.log(f"云盘任务: ✅ [{task_name}] 完成, 获得积分: {record.get('earnScoreDesc')}")
-            else:
-                self.log(f"云盘任务: ✅ [{task_name}] 已完成")
-
     def get_cloud_upload_name_cloud(self):
         return os.environ.get("UNICOM_CLOUD_UPLOAD_FILENAME", "8648").strip() or "8648"
-
-    def doUpload_cloud(self, taskCode, taskName, prefix="云盘任务", notify=True):
-        token = getattr(self.cloudDisk, 'userToken', '')
-        upload_path = self.get_cloud_upload_file_path()
-        if not token or not upload_path:
-            return False
-        file_size = os.path.getsize(upload_path)
-        progress_file_size = self.get_cloud_upload_progress_bytes(file_size)
-        file_name = self.get_cloud_upload_name_cloud()
-        headers = {
-            'User-Agent': "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36 Edg/135.0.0.0",
-            'Accept-Encoding': "gzip, deflate, br, zstd",
-            'Origin': "https://pan.wo.cn",
-            'Referer': "https://pan.wo.cn/",
-            'Accept-Language': "zh-CN,zh;q=0.9",
-            'Sec-Fetch-Site': "same-site",
-            'Sec-Fetch-Mode': "cors",
-            'Sec-Fetch-Dest': "empty",
-        }
-        for attempt in range(1, 3):
-            request_time = str(int(time.time() * 1000))
-            file_info = self.encrypt_data_cloud(json.dumps({
-                "spaceType": "0",
-                "directoryId": "0",
-                "batchNo": datetime.now().strftime("%Y%m%d"),
-                "fileName": file_name,
-                "fileSize": progress_file_size,
-                "fileType": "1",
-            }, ensure_ascii=False, separators=(',', ':')), token)
-            try:
-                with open(upload_path, 'rb') as file_obj:
-                    files = {
-                        "uniqueId": (None, f"{request_time}_{''.join(random.choices('abcdefghijklmnopqrstuvwxyz0123456789', k=6))}"),
-                        "accessToken": (None, token),
-                        "fileName": (None, file_name),
-                        "psToken": (None, "undefined"),
-                        "fileSize": (None, str(file_size)),
-                        "totalPart": (None, "1"),
-                        "partSize": (None, str(file_size)),
-                        "partIndex": (None, "1"),
-                        "channel": (None, "wocloud"),
-                        "directoryId": (None, "0"),
-                        "fileInfo": (None, file_info),
-                        "file": (file_name, file_obj, "image/jpeg"),
-                    }
-                    res = self.request_direct("POST", self.cloudDiskUrls['upload2C'], headers=headers, files=files, timeout=UNICOM_CLOUD_UPLOAD_TIMEOUT)
-                res_json = {}
-                try:
-                    res_json = res.json()
-                except:
-                    pass
-                meta_code = str(res_json.get('meta', {}).get('code', ''))
-                code = str(res_json.get('code', ''))
-                if res.status_code == 200 and (not res_json or meta_code in ('200', '0', '0000') or code in ('200', '0', '0000')):
-                    self.cloudDisk.uploadedFileCount = int(getattr(self.cloudDisk, 'uploadedFileCount', 0) or 0) + 1
-                    self.log(f"{prefix}: [{taskName}] 上传成功")
-                    if taskCode:
-                        time.sleep(1)
-                        self.doPopUp_cloud(taskCode, taskName, False, notify=notify)
-                    return True
-                if attempt < 2 and res.status_code >= 500:
-                    self.log(f"{prefix}: [{taskName}] 上传返回 {res.status_code}，重建请求重试一次")
-                    time.sleep(2)
-                    continue
-                self.log(f"{prefix}: ❌ [{taskName}] 上传失败: HTTP {res.status_code} {res_json if res_json else res.text[:200]}")
-                return False
-            except Exception as e:
-                if attempt < 2:
-                    self.log(f"{prefix}: [{taskName}] 上传异常，重建请求重试一次: {e}")
-                    time.sleep(2)
-                    continue
-                self.log(f"{prefix}: ❌ [{taskName}] 上传异常: {e}")
-        return False
-
-    def doPopUp_cloud(self, taskCode, taskName, is_changer, notify=True):
-        if not self.get_userticket_cloud(is_changer): return
-        known_ids = set(getattr(self.cloudDisk, 'knownTaskRecordIds', set()))
-        time.sleep(5)
-        data = self.cloudRequest('doPopUp', {}, is_changer, 'post')
-        res = data.get('result')
-        if not isinstance(res, dict):
-             res = {}
-        code = res.get('meta', {}).get('code')
-        code2 = res.get('code')
-        if str(code) == "0000" or str(code) == "0" or str(code2) == "0000" or str(code2) == "0":
-             record = self.match_new_cloud_task_record(taskName, known_ids)
-             if record:
-                 score_desc = record.get('earnScoreDesc') or res.get('data', {}).get('score', 0)
-                 self.log(f"云盘任务: ✅ [{taskName}] 完成, 获得积分: {score_desc}", notify=notify)
-                 return
-             score = res.get('data', {}).get('score', 0)
-             if str(score) not in ('', '0', '0积分'):
-                 self.log(f"云盘任务: ✅ [{taskName}] 领取到积分: {score}，但未在积分明细匹配到当前任务", notify=notify)
-             else:
-                 self.log(f"云盘任务: ✅ [{taskName}] 完成", notify=notify)
-        else:
-             self.log(f"云盘任务: ❌ [{taskName}] 领取奖励失败: {res}")
-
-    def toFinish_cloud(self, taskCode, taskName, is_changer):
-        if not self.get_userticket_cloud(is_changer): return False
-        data = self.cloudRequest('toFinish', {'taskCode': taskCode}, is_changer, 'post')
-        res = data.get('result')
-        if not isinstance(res, dict):
-             res = {}
-        if res.get('code') == "0000": return True
-        return False
-
-    def dosign_cloud(self, taskCode, taskName):
-        if not self.get_userticket_cloud(False): return
-        data = self.cloudRequest('dosign', {'taskCode': taskCode}, False, 'post')
-        res = data.get('result')
-        if not isinstance(res, dict):
-             res = {}
-        if "0000" in str(res.get('code')) and res.get('data', {}).get('score'):
-             self.log(f"云盘任务: ✅ [{taskName}] 完成, 获得积分: {res['data']['score']}", notify=True)
-        else:
-             self.log(f"云盘任务: ❌ [{taskName}] 失败: {res}")
-
-    def upload_specific_file_quick_cloud(self):
-        token = getattr(self.cloudDisk, 'userToken', '')
-        if not token:
-            return False, None
-        quick_transfer_url = "https://b.smartont.net/openapi/transfer/quickTransfer"
-        headers = {
-            "access-token": token,
-            "User-Agent": "okhttp-okgo/jeasonlzy LianTongYunPan/5.0.7 (Android 15)",
-            "client-Id": "1001000035",
-            "app-version": "yp-app/5.0.7",
-            "Content-Type": "application/json"
-        }
-        body = {
-            "batchNo": ''.join(random.choices(string.hexdigits.upper(), k=32)),
-            "directoryId": "0",
-            "fileName": "南网在线_4.3.128.apk",
-            "fileSize": "223892168",
-            "fileType": "5",
-            "sha256": "479f9fe75fd218c0c9f9b8038fcfabcc5068094ceaad4bce3443dff304526656",
-            "spaceType": "0",
-            "autoRename": 1,
-        }
-        try:
-            res = self.session.post(quick_transfer_url, headers=headers, json=body, timeout=15)
-            if res.status_code == 200:
-                resp_json = res.json()
-                if isinstance(resp_json, dict) and str(resp_json.get("meta", {}).get("code")) in ["0000", "0"]:
-                    if resp_json.get("result", {}).get("hasFile") in [1, None, "1"]:
-                        fid = resp_json.get("result", {}).get("woCloudId")
-                        if fid:
-                            return True, fid
-        except Exception as e:
-            self.log(f"云盘任务: 秒传请求异常: {e}")
-        return False, None
-
-    def get_taskDetail_cloud(self):
-        taskList = self.query_cloud_task_list_cloud()
-        if taskList:
-            names = [t.get('taskName', '?') for t in taskList]
-            self.log(f"云盘任务: 任务列表({len(taskList)}): {', '.join(names)}")
-        else:
-            self.log("云盘任务: 任务列表为空")
-            return
-        for task in taskList:
-            time.sleep(0.5)
-            tName = task.get('taskName', '')
-            tCode = task.get('taskCode')
-            finishText = task.get('finishText')
-            finished = int(task.get('finishCount', 0))
-            required = int(task.get('needCount', 0))
-            if finishText == "待领取":
-                self.log(f"云盘任务: [{tName}] 待领取")
-                self.doPopUp_cloud(tCode, tName, False)
-                continue
-            if finishText in ["已完成", "已领取"] or task.get('finishState', False) == True or (required > 0 and finished >= required):
-                self.log(f"云盘任务: ✅ [{tName}] 已完成")
-                continue
-            self.log(f"云盘任务: 开始执行 [{tName}] 进度: {finished}/{required}")
-            if "签到" in tName:
-                self.toFinish_cloud(tCode, tName, False)
-                self.dosign_cloud(tCode, tName)
-            elif "与AI通通互动" in tName:
-                self.toFinish_cloud(tCode, tName, False)
-                self.do_ai_interaction_cloud(tCode, tName)
-            elif "微信备份" in tName or "通讯录备份" in tName:
-                self.log(f"云盘任务: [{tName}] 暂未适配，当前缺少该任务专用协议，先跳过")
-            elif "当月上传容量满1GB" in tName:
-                self.toFinish_cloud(tCode, tName, False)
-                self.log(f"云盘任务: 开始执行1GB秒传任务...")
-                upload_ok = 0
-                for i in range(5):
-                    success, fid = self.upload_specific_file_quick_cloud()
-                    if success and fid:
-                        upload_ok += 1
-                        self.log(f"云盘任务: 第{i + 1}/5次秒传成功")
-                        time.sleep(random.uniform(1, 2))
-                        self.delete_root_files_cloud([{'id': fid, 'type': '1'}])
-                    else:
-                        self.log(f"云盘任务: 第{i + 1}/5次秒传失败")
-                    time.sleep(random.uniform(2, 4))
-                current_task = self.get_cloud_task_by_code_cloud(tCode)
-                current_finishText = current_task.get('finishText') if current_task else finishText
-                if current_finishText in ["已完成", "已领取"]:
-                    self.log(f"云盘任务: ✅ [{tName}] 1GB秒传任务已完成", notify=True)
-                else:
-                    self.log(f"云盘任务: [{tName}] 秒传结束，当前状态: {current_finishText}", notify=True)
-            else:
-                self.run_generic_cloud_task(tCode, tName)
 
     def query_all_files_cloud(self, space_type="0", parent_directory_id="0", page_num=0, page_size=500):
         token = getattr(self.cloudDisk, 'userToken', '')
@@ -2774,6 +2231,217 @@ class UserService:
             time.sleep(1)
         return deleted
 
+    def yphd_headers(self, client_id="1001000165", extra=None):
+        token = self.cloudDisk.userToken
+        headers = {
+            "X-YP-Access-Token": token,
+            "User-Agent": "Mozilla/5.0 (Linux; Android 9; 23113RKC6C Build/PQ3A.190605.10201411; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/91.0.4472.114 Safari/537.36/woapp LianTongYunPan/5.5.0 (Android 9)",
+            "clientId": client_id,
+            "X-SH-Access-Token": "",
+            "X-YP-GRAY-FLAG": "undefined",
+            "Content-Type": "application/json",
+            "X-YP-Client-Id": client_id,
+            "token": token,
+            "Origin": "https://panservice.mail.wo.cn",
+            "Referer": f"https://panservice.mail.wo.cn/h5/activitymobile/aiActor?activityId=Mjg%3D&touchpoint=300300010005&token={token}",
+        }
+        if extra:
+            headers.update(extra)
+        return headers
+
+    def yphd_post(self, path, payload=None, client_id="1001000165", extra=None):
+        res = self.session.post(f"https://panservice.mail.wo.cn{path}", json=payload or {}, headers=self.yphd_headers(client_id, extra), timeout=20)
+        try:
+            return res.json()
+        except Exception:
+            return {"text": res.text[:300]}
+
+    def yphd_get(self, path, params=None, client_id="1001000165", extra=None):
+        res = self.session.get(f"https://panservice.mail.wo.cn{path}", params=params or {}, headers=self.yphd_headers(client_id, extra), timeout=20)
+        try:
+            return res.json()
+        except Exception:
+            return {"text": res.text[:300]}
+
+    def yphd_build_sign(self, payload):
+        raw = "&".join(f"{k}={payload[k]}" for k in sorted(payload)) + f"&secret={YPHD_SECRET_KEY}"
+        return hmac.new(YPHD_SECRET_KEY.encode(), raw.encode(), hashlib.sha256).hexdigest()
+
+    def yphd_signed_post(self, path, key, payload=None, client_id="1001000165", extra=None):
+        ts = self.yphd_post("/activity/getTimestamp", {"key": key})
+        result = ts.get("result") or {}
+        nonce = result.get("nonce")
+        timestamp = result.get("timestamp")
+        if not nonce or not timestamp:
+            self.log(f"云盘乘风活动: getTimestamp失败 {ts}")
+            return {}
+        body = dict(payload or {})
+        body.update({"activityId": YPHD_ACTIVITY_ID, "nonce": nonce, "timestamp": timestamp})
+        body["sign"] = self.yphd_build_sign(body)
+        return self.yphd_post(path, body, client_id, extra)
+
+    def yphd_ai_query(self):
+        payload = {
+            "input": "你好",
+            "modelId": 0,
+            "platform": 2,
+            "tag": 21,
+            "conversationId": "",
+            "knowledgeId": "",
+            "referFileInfo": [],
+            "messageId": "",
+            "conversationType": 0,
+            "recipient": "",
+            "async": False,
+        }
+        headers = self.yphd_headers("1001000035", {
+            "accept": "text/event-stream",
+            "X-YP-App-Version": "5.4.2",
+            "Referer": f"https://panservice.mail.wo.cn/h5/wocloud_ai_1/workFlow?needBackBtn=true&token={self.cloudDisk.userToken}",
+        })
+        try:
+            res = self.session.post("https://panservice.mail.wo.cn/wohome/ai/assistant/query", json=payload, headers=headers, stream=True, timeout=30)
+            text = ""
+            for line in res.iter_lines(decode_unicode=True):
+                if line:
+                    text += line
+                if len(text) > 500:
+                    break
+            self.log("云盘乘风活动: AI助手响应完成" if res.status_code == 200 else f"云盘乘风活动: AI助手失败 {res.status_code}")
+            return text
+        except Exception as e:
+            self.log(f"云盘乘风活动: AI助手异常 {e}")
+            return ""
+
+    def yphd_move_file(self):
+        payload = {
+            "activityId": YPHD_ACTIVITY_ID,
+            "fids": [YPHD_MOVE_FILE_FID],
+            "taskType": 10,
+            "fileType": 2,
+            "fileName": YPHD_MOVE_FILE_NAME,
+            "directoryId": 0,
+            "additionalParams": {"aiHeaderSubType": 0},
+        }
+        headers = {
+            "Access-Token": self.cloudDisk.userToken,
+            "Client-Id": "1001000165",
+            "App-Version": "yp-app/5.5.0",
+            "Referer": f"https://panservice.mail.wo.cn/h5/activitymobile/aiActor?activityId=Mjg%3D&touchpoint=300300010065&token={self.cloudDisk.userToken}",
+        }
+        res = self.yphd_post("/wohome/open/v1/ai/moveFile2Person", payload, "1001000165", headers)
+        self.log(f"云盘乘风活动: 视频转存 {res.get('meta', {}).get('message') or response_summary(res)}")
+        return res
+
+    def yphd_mgtv_headers(self):
+        return {
+            "User-Agent": "Mozilla/5.0 (Linux; Android 9; 23113RKC6C Build/PQ3A.190605.10201411; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/91.0.4472.114 Safari/537.36/woapp LianTongYunPan/5.5.0 (Android 9)",
+            "Accept": "application/json, text/plain, */*",
+            "Content-Type": "application/json",
+            "Origin": "https://pop.mgtv.com",
+            "Referer": "https://pop.mgtv.com/",
+        }
+
+    def yphd_mgtv_login(self):
+        data = self.yphd_post("/api-user/api/user/ticket", {}, "1001000035")
+        ticket = (data.get("result") or {}).get("ticket")
+        if not ticket:
+            self.log(f"云盘乘风活动: 芒果ticket失败 {response_summary(data)}")
+            return "", ""
+        res = self.session.get(f"{YPHD_MGTV_BASE}/api/cu/login", params={"ticket": ticket, "t": int(time.time() * 1000)}, headers=self.yphd_mgtv_headers(), timeout=20)
+        self.log("云盘乘风活动: 芒果登录成功" if res.status_code == 200 else f"云盘乘风活动: 芒果登录失败 {res.status_code}")
+        try:
+            info = res.json().get("data") or {}
+        except Exception:
+            info = {}
+        mgtv_ticket = info.get("ticket") or ticket
+        access_token = info.get("accessToken", "")
+        self.session.get(f"{YPHD_MGTV_BASE}/api/cu/popup/check", params={"ticket": mgtv_ticket}, headers=self.yphd_mgtv_headers(), timeout=20)
+        return mgtv_ticket, access_token
+
+    def yphd_mgtv_task(self, ticket, access_token):
+        payload = {"ticket": ticket, "templateId": YPHD_MGTV_TEMPLATE_ID, "index": 0, "imgUrl": YPHD_MGTV_IMG_URL}
+        data = self.yphd_mgtv_template_submit(payload)
+        if data.get("msg") == "权益扣减失败":
+            params = {"isFirstInstall": 1, "version": "android@11.0702", "token_online": access_token, "ticket": ticket}
+            off = self.session.get(f"{YPHD_MGTV_BASE}/api/cu/offlineSubscribe", params=params, headers=self.yphd_mgtv_headers(), timeout=20)
+            try:
+                off_data = off.json()
+                off_msg = off_data.get("msg") or off_data.get("message") or response_summary(off_data)
+            except Exception:
+                off_msg = off.text[:80] or f"HTTP {off.status_code}"
+            self.log(f"云盘乘风活动: 订阅权益 {off_msg}")
+            data = self.yphd_mgtv_template_submit(payload)
+        result = data.get("data") or {}
+        task_id = result.get("taskId") or data.get("taskId")
+        if not task_id:
+            self.log(f"云盘乘风活动: 模板提交失败 {data.get('msg') or response_summary(data)}")
+            return
+        result_res = self.session.get(f"{YPHD_MGTV_BASE}/api/cu/video/template/result", params={"taskId": task_id, "ticket": ticket}, headers=self.yphd_mgtv_headers(), timeout=20)
+        self.log(f"云盘乘风活动: 模板结果 {result_res.text[:120]}")
+
+    def yphd_mgtv_template_submit(self, payload):
+        res = self.session.post(f"{YPHD_MGTV_BASE}/api/cu/video/template/submit", json=payload, headers=self.yphd_mgtv_headers(), timeout=20)
+        try:
+            return res.json()
+        except Exception:
+            return {"msg": res.text[:120] or f"HTTP {res.status_code}"}
+
+    def yphd_activity_task(self):
+        if not getattr(self.cloudDisk, "userToken", ""):
+            return
+        try:
+            self.log("==== 云盘乘风活动 ====")
+            status = self.yphd_signed_post("/activity/fragment/status", "activity:fragment:status", {}, "1001000035")
+            result = status.get("result") or {}
+            self.log(f"云盘乘风活动: 碎片阶段 {result.get('fragmentStep')}")
+            task_info = self.yphd_get("/activity/activity/task/info", {"activityId": YPHD_ACTIVITY_ID}, "1001000035")
+            logs = (task_info.get("result") or {}).get("logs") or []
+            if logs:
+                self.log("云盘乘风活动: 已完成 " + "、".join(x.get("taskName", "") for x in logs if x.get("taskName")))
+            self.yphd_signed_post("/activity/fragment/task/activate", "activity:fragment:activate")
+            self.yphd_move_file()
+            self.yphd_ai_query()
+            task1 = self.yphd_signed_post("/activity/aiRole/task1/acquire", "activity:acquire:task1", {}, "1001000035")
+            self.log(f"云盘乘风活动: task1 {task1.get('meta', {}).get('message') or response_summary(task1)}")
+            status_after = self.yphd_signed_post("/activity/fragment/status", "activity:fragment:status", {}, "1001000035")
+            step_after = safe_int((status_after.get("result") or {}).get("fragmentStep"))
+            self.log(f"云盘乘风活动: task1后碎片阶段 {step_after}")
+            if step_after >= 3:
+                task2 = self.yphd_signed_post("/activity/aiRole/task2", "activity:acquire:task2", {}, "1001000165", {
+                    "X-YP-Open-Version": "v1.0",
+                    "X-CM-SERVICE": getattr(self, "account_mobile", "") or getattr(self, "mobile", ""),
+                    "X-PATH": "/h5/wocloud_ai_1/workFlow",
+                    "accesstoken": self.cloudDisk.userToken,
+                    "Access-Token": self.cloudDisk.userToken,
+                    "App-Version": "yp-app/5.5.0",
+                    "Client-Id": "1001000165",
+                })
+                self.log(f"云盘乘风活动: task2 {task2.get('meta', {}).get('message') or response_summary(task2)}")
+            else:
+                self.log("云盘乘风活动: task2 阶段未满足，跳过")
+            ticket, access_token = self.yphd_mgtv_login()
+            if ticket:
+                self.yphd_mgtv_task(ticket, access_token)
+            records = self.yphd_post("/activity/aiRole/userDrawRecords", {"activityId": YPHD_ACTIVITY_ID}, "1001000035")
+            if records.get("result"):
+                self.log(f"云盘乘风活动: 抽奖记录 {len(records.get('result') or [])} 条")
+            times = self.yphd_get("/activity/lottery/lottery-times", {"activityId": YPHD_ACTIVITY_ID})
+            times_result = times.get("result") if isinstance(times, dict) else 0
+            if isinstance(times_result, dict):
+                times_result = times_result.get("lotteryTimes") or times_result.get("times") or times_result.get("count") or 0
+            count = int(times_result or 0)
+            self.log(f"云盘乘风活动: 抽奖次数 {count}")
+            for index in range(count):
+                prize = self.yphd_signed_post("/activity/lottery", "activity:lottery")
+                info = prize.get("result") or {}
+                self.log(f"云盘乘风活动: 第{index + 1}次抽奖 {info.get('prizeName') or response_summary(prize)}", notify=bool(info.get("prizeName")))
+                time.sleep(2)
+            if count:
+                self.yphd_signed_post("/activity/fragment/updateFrontendStatus", "activity:fragment:frontendStatus", {"frontendStatus": 1}, "1001000035")
+        except Exception as e:
+            self.log(f"云盘乘风活动异常: {e}")
+
     def clean_duplicate_files_cloud(self):
         token = getattr(self.cloudDisk, 'userToken', '')
         if not token:
@@ -2881,326 +2549,6 @@ class UserService:
         self.cloudDisk.uploadedFileCount = 0
         self.log("云盘任务: 云盘重复文件清理完成")
 
-    def build_cloud_lottery_headers(self, activity_id=CLOUD_SPEED_ACTIVITY_ID, share_token=""):
-        token = getattr(self.cloudDisk, 'userToken', '')
-        if not token:
-            return {}
-        referer = f"https://panservice.mail.wo.cn/h5/mobile/speed/start?activityId={quote(activity_id)}&touchpoint=300300010005&token={token}"
-        if share_token:
-            referer = f"https://panservice.mail.wo.cn/h5/mobile/speed/start?shareInfo={quote(share_token)}"
-        return {
-            'User-Agent': "Mozilla/5.0 (Linux; Android 9; 2210132C Build/PQ3A.190605.10201411; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/91.0.4472.114 Safari/537.36/woapp LianTongYunPan/5.3.0 (Android 9)",
-            'Accept': 'application/json, text/plain, */*',
-            'Content-Type': 'application/json',
-            'source-type': 'woapi',
-            'clientId': '1001000035',
-            'Client-Id': '1001000035',
-            'token': token,
-            'accesstoken': token,
-            'Access-Token': token,
-            'X-YP-Access-Token': token,
-            'X-YP-Client-Id': '1001000035',
-            'X-Requested-With': 'com.chinaunicom.bol.cloudapp',
-            'Origin': 'https://panservice.mail.wo.cn',
-            'Referer': referer,
-        }
-
-    def get_cloud_lottery_draw_count(self, times_res):
-        result = times_res.get('result') if isinstance(times_res, dict) else None
-        if isinstance(result, int):
-            return result
-        if not isinstance(result, dict):
-            return 0
-        for key in ['times', 'lotteryTimes', 'freeTimes', 'drawTimes', 'count']:
-            if key in result:
-                try:
-                    return int(result.get(key) or 0)
-                except:
-                    return 0
-        return 0
-
-    def is_cloud_lottery_notify_prize(self, prize_name):
-        name = str(prize_name or '').strip()
-        if not name:
-            return False
-        return name != "暂无抽奖记录"
-
-    def query_cloud_lottery_times_cloud(self, activity_id, headers=None):
-        if not activity_id:
-            return None
-        use_headers = dict(headers or self.build_cloud_lottery_headers(activity_id))
-        if not use_headers:
-            return None
-        use_headers['requestTime'] = str(int(time.time() * 1000))
-        res = self.session.get(self.cloudDiskUrls['lottery_times'], params={"activityId": activity_id}, headers=use_headers, timeout=10).json()
-        self.cloudDisk.lotteryTimesResult = res
-        return res
-
-    def query_cloud_lottery_record_cloud(self, activity_id, limit=5):
-        headers = self.build_cloud_lottery_headers(activity_id)
-        if not activity_id or not headers:
-            return []
-        try:
-            res = self.session.get(self.cloudDiskUrls['lottery_record'], params={"activityId": activity_id}, headers=headers, timeout=10).json()
-            if str(res.get('meta', {}).get('code')) == '200':
-                record_list = res.get('result') or []
-                if not record_list:
-                    self.log("云盘任务: 测速抽奖记录: 暂无记录")
-                    return []
-                display_records = record_list[:limit]
-                self.log(f"云盘任务: 测速抽奖记录: 最近 {len(display_records)} 条")
-                for item in display_records:
-                    prize = item.get('prizeName') or '未知奖品'
-                    create_time = item.get('createTime') or ''
-                    status = item.get('isAccountTxt') or ''
-                    suffix = f" | {status}" if status else ""
-                    self.log(f"云盘任务: 测速抽奖记录: {create_time} | {prize}{suffix}")
-                return display_records
-        except Exception as e:
-            self.log(f"云盘任务: 查询抽奖记录异常: {e}")
-        return []
-
-    def get_cloud_lottery_activity_id_cloud(self):
-        if getattr(self.cloudDisk, 'lotteryActivityId', None):
-            return self.cloudDisk.lotteryActivityId
-        headers = self.build_cloud_lottery_headers(CLOUD_SPEED_ACTIVITY_ID)
-        if not headers:
-            return None
-        activity_id = os.environ.get("UNICOM_CLOUD_LOTTERY_ACTIVITY_ID", "").strip() or CLOUD_SPEED_ACTIVITY_ID
-        try:
-            res = self.query_cloud_lottery_times_cloud(activity_id, headers)
-            meta_code = str(res.get('meta', {}).get('code'))
-            if meta_code == '200':
-                self.cloudDisk.lotteryActivityId = activity_id
-                self.cloudDisk.lotteryTimesResult = res
-                self.log("云盘任务: 开始执行测速抽奖活动")
-                return activity_id
-            self.log(f"云盘任务: 测速抽奖活动[{activity_id}] 无效: {res}")
-        except Exception as e:
-            self.log(f"云盘任务: 查询测速抽奖活动[{activity_id}]失败: {e}")
-        return None
-
-    def cloud_speed_post(self, url_name, payload, headers=None):
-        use_headers = dict(headers or self.build_cloud_lottery_headers())
-        use_headers['requestTime'] = str(int(time.time() * 1000))
-        return self.session.post(self.cloudDiskUrls[url_name], json=payload, headers=use_headers, timeout=10).json()
-
-    def get_cloud_speed_mobile(self):
-        return str(getattr(self, 'account_mobile', '') or getattr(self, 'mobile', '') or '').strip()
-
-    def get_cloud_speed_team_status(self, activity_id, headers):
-        res = self.cloud_speed_post('speed_team_member', {"activityId": activity_id}, headers)
-        if str(res.get('meta', {}).get('code')) != '200':
-            return False, ""
-        result = res.get('result') or {}
-        return bool(result.get('isInTeam')), str(result.get('teamId') or '')
-
-    def create_cloud_speed_team(self, activity_id, headers):
-        mobile = self.get_cloud_speed_mobile()
-        team_name = mobile[-4:] if mobile else str(self.index)
-        res = self.cloud_speed_post('speed_team_create', {"activityId": activity_id, "teamName": team_name}, headers)
-        if str(res.get('meta', {}).get('code')) != '200':
-            self.log(f"云盘任务: 测速活动创建战队失败: {res}")
-            return ""
-        time.sleep(1)
-        in_team, team_id = self.get_cloud_speed_team_status(activity_id, headers)
-        if in_team and team_id:
-            self.log(f"云盘任务: 测速活动已创建战队 {team_id}")
-            return team_id
-        self.log("云盘任务: 测速活动创建战队后未获取到战队ID")
-        return ""
-
-    def generate_cloud_speed_invite(self, activity_id, team_id, headers):
-        mobile = self.get_cloud_speed_mobile()
-        if not team_id or not mobile:
-            return ""
-        body = {"activityId": activity_id, "teamId": int(team_id) if str(team_id).isdigit() else team_id, "inviterUserId": mobile}
-        res = self.cloud_speed_post('speed_team_token', body, headers)
-        token = res.get('result') if isinstance(res, dict) else ""
-        if str(res.get('meta', {}).get('code')) == '200' and token:
-            CLOUD_SPEED_TEAM_CONTEXT.clear()
-            CLOUD_SPEED_TEAM_CONTEXT.update({"activityId": activity_id, "teamId": str(team_id), "signToken": token, "inviterUserId": mobile})
-            self.log(f"云盘任务: 测速活动战队邀请已生成")
-            return token
-        self.log(f"云盘任务: 测速活动生成邀请失败: {res}")
-        return ""
-
-    def join_cloud_speed_team(self, activity_id, headers):
-        invite = CLOUD_SPEED_TEAM_CONTEXT if CLOUD_SPEED_TEAM_CONTEXT.get("activityId") == activity_id else {}
-        team_id = str(invite.get("teamId") or "")
-        sign_token = invite.get("signToken") or ""
-        mobile = self.get_cloud_speed_mobile()
-        if not team_id or not sign_token or not mobile:
-            return False
-        join_headers = self.build_cloud_lottery_headers(activity_id, sign_token)
-        res = self.cloud_speed_post('speed_team_join', {
-            "activityId": activity_id,
-            "teamId": team_id,
-            "currentUserId": mobile,
-            "signToken": sign_token,
-        }, join_headers)
-        if str(res.get('meta', {}).get('code')) == '200':
-            self.log(f"云盘任务: 测速活动已加入战队 {team_id}")
-            return True
-        self.log(f"云盘任务: 测速活动加入战队失败: {res}")
-        return False
-
-    def activate_cloud_speed_task(self, activity_id, headers):
-        try:
-            res = self.cloud_speed_post('speed_task_activate', {"activityId": activity_id}, headers)
-            if str(res.get('meta', {}).get('code')) == '200':
-                self.log("云盘任务: 测速活动任务已激活")
-                return True
-            self.log(f"云盘任务: 测速活动任务激活失败: {res}")
-        except Exception as e:
-            self.log(f"云盘任务: 测速活动任务激活异常: {e}")
-        return False
-
-    def ensure_cloud_speed_team_cloud(self, activity_id, headers):
-        in_team, team_id = self.get_cloud_speed_team_status(activity_id, headers)
-        if in_team and team_id:
-            self.log(f"云盘任务: 测速活动已在战队 {team_id}")
-            if self.index == 1 or not CLOUD_SPEED_TEAM_CONTEXT.get("signToken"):
-                self.generate_cloud_speed_invite(activity_id, team_id, headers)
-            return True
-        if CLOUD_SPEED_TEAM_CONTEXT.get("activityId") == activity_id:
-            return self.join_cloud_speed_team(activity_id, headers)
-        team_id = self.create_cloud_speed_team(activity_id, headers)
-        if not team_id:
-            return False
-        self.generate_cloud_speed_invite(activity_id, team_id, headers)
-        return True
-
-    def draw_lottery_cloud(self):
-        activity_id = self.get_cloud_lottery_activity_id_cloud()
-        if not activity_id:
-            self.log("云盘任务: 未找到有效测速抽奖活动")
-            return
-        headers = self.build_cloud_lottery_headers(activity_id)
-        if not headers:
-            return
-        try:
-            if not self.ensure_cloud_speed_team_cloud(activity_id, headers):
-                self.log("云盘任务: 测速活动战队准备失败，跳过抽奖")
-                return
-            self.activate_cloud_speed_task(activity_id, headers)
-            times_res = self.query_cloud_lottery_times_cloud(activity_id, headers)
-            times_code = str(times_res.get('meta', {}).get('code')) if isinstance(times_res, dict) else ''
-            if times_code != '200':
-                self.log(f"云盘任务: 查询测速抽奖次数失败: {times_res}")
-                return
-            draw_count = self.get_cloud_lottery_draw_count(times_res)
-            if draw_count <= 0:
-                self.log("云盘任务: 测速抽奖当前无抽奖次数")
-                return
-            for _ in range(draw_count):
-                draw_headers = dict(headers)
-                draw_headers['requestTime'] = str(int(time.time() * 1000))
-                res = self.session.post(self.cloudDiskUrls['lottery'], json={"activityId": activity_id}, headers=draw_headers, timeout=10).json()
-                if str(res.get('meta', {}).get('code')) == '92000017':
-                    self.log("云盘任务: 测速抽奖今日已抽")
-                    return
-                if 'result' in res:
-                    prize_name = res['result'].get('prizeName', '')
-                    self.log(f"云盘任务: 测速抽奖获得: {prize_name}", notify=self.is_cloud_lottery_notify_prize(prize_name))
-                    continue
-                self.log(f"云盘任务: 测速抽奖无结果: {res}")
-            self.query_cloud_lottery_record_cloud(activity_id)
-        except Exception as e:
-            self.log(f"云盘任务: 测速抽奖失败: {e}")
-
-    def get_secret_key_cloud(self):
-        if getattr(self.cloudDisk, 'secretKey', None):
-            return self.cloudDisk.secretKey
-        if not getattr(self.cloudDisk, 'userticket', None) or not getattr(self.cloudDisk, 'jeaId', None):
-            return None
-        headers = {
-            'Accept': 'application/json, text/plain, */*',
-            'Content-Type': 'application/json',
-            'Accept-Language': 'zh-CN,zh-Hans;q=0.9',
-            'User-Agent': "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) LianTongYunPan/4.0.2 (iPhone; iOS 16.6)",
-            'Accept-Encoding': 'gzip, deflate, br',
-            'Connection': 'keep-alive',
-            'Sec-Fetch-Site': 'same-origin',
-            'Sec-Fetch-Mode': 'cors',
-            'Sec-Fetch-Dest': 'empty',
-            'Origin': 'https://m.jf.10010.com',
-            'Host': 'm.jf.10010.com',
-            'clienttype': 'yunpan_iOS',
-            'partnersid': '1649',
-            'ticket': self.cloudDisk.userticket,
-            'Cookie': f"_jea_id={self.cloudDisk.jeaId};",
-        }
-        try:
-            res = self.session.get(self.cloudDiskUrls['secretKey'], headers=headers, timeout=10).json()
-            secret = res.get('data', {}).get('secretKey')
-            if res.get('code') == '0000' and secret:
-                self.cloudDisk.secretKey = secret.encode('utf-8')
-                self.log("云盘任务: secretKey 获取成功")
-                return self.cloudDisk.secretKey
-            self.log(f"云盘任务: getSecretKey 失败: {res}")
-        except Exception as e:
-            self.log(f"云盘任务: getSecretKey 异常: {e}")
-        return None
-
-    def build_signature_headers_cloud(self):
-        secret_key = self.get_secret_key_cloud()
-        if not secret_key:
-            return {}
-        request_ts = str(round(time.time() * 1000))
-        nonce = ''.join(random.choices('0123456789abcdefghijklmnopqrstuvwxyz', k=8))
-        signature = hmac.new(
-            secret_key, f"{nonce}{request_ts}".encode('utf-8'), hashlib.sha256,
-        ).hexdigest()
-        return {
-            'x-request-timestamp': request_ts,
-            'x-request-nonce': nonce,
-            'x-request-signature': signature,
-        }
-
-    def run_generic_cloud_task(self, task_code, task_name):
-        self.log(f"云盘任务: [{task_name}] 尝试通用完成接口")
-        self.toFinish_cloud(task_code, task_name, False)
-        time.sleep(2)
-        self.handle_unknown_task_cloud(task_code, task_name)
-        time.sleep(3)
-        self.finalize_generic_task_cloud(task_code, task_name)
-
-    def handle_unknown_task_cloud(self, task_code, task_name=""):
-        token = getattr(self.cloudDisk, 'userToken', '')
-        if not token:
-            return False
-        headers = {
-            'User-Agent': 'LianTongYunPan/5.0.4 (iOS 16.3)',
-            'Accept': 'application/json, text/plain, */*',
-            'Content-Type': 'application/json',
-            'Accept-Encoding': 'br;q=1.0, gzip;q=0.9, deflate;q=0.8',
-            'Access-Token': token, 'X-YP-Access-Token': token,
-            'Client-Id': '1001000035', 'X-YP-Client-Id': '1001000035',
-            'App-Version': 'yp-app/5.0.4', 'app-type': 'liantongyunpanapp',
-            'Sys-Version': 'iOS/16.3',
-            'Accept-Language': 'zh-Hans-CN;q=1.0',
-        }
-        prefix = f"云盘任务: [{task_name}]" if task_name else "云盘任务: 未知任务"
-        try:
-            res = self.session.post(
-                self.cloudDiskUrls['taskFinish'],
-                json={"taskCode": task_code, "taskStatus": {"isBackUp": "1"}},
-                headers=headers,
-                timeout=10,
-            ).json()
-            meta_code = str(res.get('meta', {}).get('code'))
-            if meta_code == '90003600':
-                self.log(f"{prefix} 处理完成")
-                return True
-            if meta_code in ('200', '0') or str(res.get('code')) in ('200', '0', '0000'):
-                self.log(f"{prefix} 处理完成: {res.get('msg', res.get('meta', {}).get('message', '成功'))}")
-                return True
-            self.log(f"{prefix} 处理失败: {res}")
-        except Exception as e:
-            self.log(f"云盘任务: [{task_name or task_code}] 处理失败: {e}")
-        return False
-
     def ltyp_task(self, is_query_only=False):
         self.log("==== 联通云盘任务 ====")
         self.init_cloud_urls()
@@ -3210,26 +2558,12 @@ class UserService:
             self.log("云盘任务: 缺少 ecs_token，跳过。")
             return
         ticket = self.getTicketByNative_cloud()
-        if not ticket: return
-        if not hasattr(self, 'city_info') or not self.city_info:
-             self.get_city_info()
-        token = self.get_ltypDispatcher_cloud(ticket)
-        if not token: return
-        time.sleep(0.5)
-        self.get_userInfo_cloud()
-        self.init_cloud_task_records_state()
-        if is_query_only:
-            self.log("云盘任务: [查询模式] 跳过任务执行...")
-            self.get_userInfo_cloud()
+        if not ticket:
             return
-        time.sleep(0.5)
-        self.get_secret_key_cloud()
-        self.get_taskDetail_cloud()
-        time.sleep(0.5)
-        self.get_userInfo_cloud()
-        time.sleep(2)
-        self.draw_lottery_cloud()
-        time.sleep(2)
+        token = self.get_ltypDispatcher_cloud(ticket)
+        if not token:
+            return
+        self.yphd_activity_task()
         self.clean_duplicate_files_cloud()
 
     def getTicketByNative_sec(self):
@@ -4222,7 +3556,17 @@ class UserService:
         }
 
     def ltzf_task(self):
+        if not UserService.wocare_available:
+            return
         self.log("==== 联通祝福 ====")
+        try:
+            self.session.head("https://wocare.unisk.cn", timeout=3)
+        except (requests.exceptions.ConnectionError, requests.exceptions.Timeout):
+            self.log("联通祝福: [提示] 沃关怀(wocare.unisk.cn)活动域名已物理下线或当前网络不可达，已自动跳过此模块")
+            UserService.wocare_available = False
+            return
+        except Exception:
+            pass
         base_url = "https://wocare.unisk.cn/mbh/getToken"
         params = {
             "channelType": WOCARE_CONSTANTS["serviceLife"],
@@ -5838,6 +5182,56 @@ class UserService:
         self.log(f"沃云手机: 抽奖获得：{prize}", notify=True)
         return res
 
+    def wostore_points_history_has_prize(self, user_token, goods_id):
+        try:
+            res = self.session.get(
+                f"https://uphone.wostore.cn/h5api/activity-service/points/v1/lottery/history?page=1&pageSize=10&goodsId={goods_id}",
+                headers=self.wostore_cloud_activity_headers(user_token),
+                timeout=WOSTORE_CLOUD_TIMEOUT,
+            ).json()
+            today = datetime.now().strftime("%Y-%m-%d")
+            data = res.get("data") or {}
+            records = data if isinstance(data, list) else data.get("records", []) or data.get("list", [])
+            for item in records:
+                if str(item.get("createTime") or item.get("drawTime") or "").startswith(today) and item.get("prizeName"):
+                    return True
+        except Exception as e:
+            self.log(f"沃云手机: 积分抽奖记录查询异常 {e}")
+        return False
+
+    def wostore_points_exchange_remain(self, user_token, goods_id):
+        try:
+            res = self.session.get(
+                f"https://uphone.wostore.cn/h5api/activity-service/points/v1/exchange/list?activityCode={WOSTORE_POINTS_ACT_CODE}",
+                headers=self.wostore_cloud_activity_headers(user_token),
+                timeout=WOSTORE_CLOUD_TIMEOUT,
+            ).json()
+            data = res.get("data") or {}
+            goods_list = data if isinstance(data, list) else data.get("goodsList", []) or data.get("list", [])
+            for item in goods_list:
+                if str(item.get("goodsId")) == str(goods_id):
+                    remain = safe_int(item.get("remainUser") or item.get("remainCount") or item.get("surplusCount"), 0)
+                    self.log(f"沃云手机: 积分商品[{goods_id}]剩余次数：{remain}")
+                    return remain
+        except Exception as e:
+            self.log(f"沃云手机: 积分兑换列表查询异常 {e}")
+        return 0
+
+    def wostore_points_lottery(self, user_token, goods_id):
+        res = self.wostore_cloud_activity_post(
+            "/h5api/activity-service/points/v1/lottery",
+            {"activityCode": WOSTORE_POINTS_ACT_CODE, "goodsId": goods_id},
+            user_token,
+            "积分抽奖",
+        )
+        results = (res.get("data") or {}).get("results") or []
+        if not results and res.get("data"):
+            results = [res.get("data")]
+        prizes = [str(item.get("prizeName") or "未知") for item in results]
+        label = "积分单抽" if str(goods_id) == str(WOSTORE_POINTS_GOODS_ID_1) else "积分10连抽"
+        self.log(f"沃云手机: {label}：{res.get('msg') or '、'.join(prizes) or '未知'}", notify=True)
+        return any(WOSTORE_POINTS_STOP_PRIZE in prize for prize in prizes)
+
     def wostore_cloud_device_status(self, cloud_token):
         res = self.wostore_cloud_bucp_get("/servers/resource/instance/list?pageNum=1&pageSize=200", cloud_token)
         rows = res.get("rows") or (res.get("data") or {}).get("rows") or []
@@ -5875,16 +5269,30 @@ class UserService:
         self.wostore_cloud_sign(cloud_token)
         time.sleep(3)
         self.wostore_cloud_sign_rewards(cloud_token)
+        points_user_token = ""
         for activity_code in WOSTORE_CLOUD_ACTIVITY_CODES:
             user_token = self.wostore_cloud_activity_login(cloud_token, activity_code)
             if not user_token:
                 continue
+            if not points_user_token:
+                points_user_token = user_token
             self.wostore_cloud_points_sign(user_token, WOSTORE_CLOUD_SIGN_CODE)
             self.wostore_cloud_task_list(user_token, activity_code)
             for lottery_code in WOSTORE_CLOUD_LOTTERY_CODES:
                 for _ in range(self.wostore_cloud_lottery_count(user_token, lottery_code)):
                     self.wostore_cloud_draw(user_token, lottery_code)
                     time.sleep(3)
+        if points_user_token:
+            if self.wostore_points_history_has_prize(points_user_token, WOSTORE_POINTS_GOODS_ID_1):
+                self.log("沃云手机: 今日已中奖，跳过积分单抽")
+            else:
+                for _ in range(min(self.wostore_points_exchange_remain(points_user_token, WOSTORE_POINTS_GOODS_ID_1), WOSTORE_POINTS_MAX_DRAW)):
+                    if self.wostore_points_lottery(points_user_token, WOSTORE_POINTS_GOODS_ID_1):
+                        break
+                    time.sleep(3)
+            for _ in range(min(self.wostore_points_exchange_remain(points_user_token, WOSTORE_POINTS_GOODS_ID_10), WOSTORE_POINTS_MAX_DRAW)):
+                self.wostore_points_lottery(points_user_token, WOSTORE_POINTS_GOODS_ID_10)
+                time.sleep(3)
         self.wostore_cloud_point_info(cloud_token)
         self.wostore_cloud_device_status(cloud_token)
 
